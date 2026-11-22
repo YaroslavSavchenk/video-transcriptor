@@ -43,7 +43,9 @@ def fake_ytdlp(monkeypatch):
 
     module = types.SimpleNamespace(YoutubeDL=FakeYDL, utils=types.SimpleNamespace(DownloadError=DownloadError))
     monkeypatch.setitem(sys.modules, "yt_dlp", module)
-    monkeypatch.setattr(core, "_has_audio", lambda path: True)
+    import numpy as np
+
+    monkeypatch.setattr(core.sandbox, "decode_audio", lambda path, max_s, workdir=None: np.zeros(16000 * 30, "float32"))
     FakeYDL.info, FakeYDL.downloaded, FakeYDL.tmpdirs = {}, False, []
     calls = []
 
@@ -58,14 +60,14 @@ def fake_ytdlp(monkeypatch):
 def test_rejects_videos_longer_than_limit(fake_ytdlp):
     FakeYDL.info = {"title": "long", "duration": core.MAX_DURATION_SECONDS + 1}
     with pytest.raises(core.TranscriptionError, match="limit is 10 minutes"):
-        core.transcribe("https://youtube.com/watch?v=x")
+        core.transcribe("https://www.youtube.com/watch?v=abcdefghijk")
     assert not FakeYDL.downloaded
 
 
 def test_uses_captions_without_downloading(fake_ytdlp):
     FakeYDL.info = {"title": "t", "duration": 30, "language": "en",
                     "subtitles": {"en": [{"ext": "vtt", "url": "https://example.com/en.vtt"}]}}
-    t = core.transcribe("https://youtube.com/watch?v=x")
+    t = core.transcribe("https://www.youtube.com/watch?v=abcdefghijk")
     assert t.source == "captions" and t.text == "from captions"
     assert not FakeYDL.downloaded and not fake_ytdlp
 
@@ -74,7 +76,7 @@ def test_falls_back_to_speech_recognition_and_cleans_up(fake_ytdlp):
     import os
 
     FakeYDL.info = {"title": "reel", "duration": 30}
-    t = core.transcribe("https://instagram.com/reel/x")
+    t = core.transcribe("https://www.instagram.com/reel/ABCDEFGH/")
     assert t.source == "speech-recognition" and t.text == "from speech"
     assert fake_ytdlp == [("small.en", "en")]  # English-first defaults
     assert FakeYDL.downloaded
@@ -83,20 +85,20 @@ def test_falls_back_to_speech_recognition_and_cleans_up(fake_ytdlp):
 
 def test_other_language_gets_multilingual_model(fake_ytdlp):
     FakeYDL.info = {"title": "reel", "duration": 30}
-    core.transcribe("https://instagram.com/reel/x", language="nl", use_captions=False)
+    core.transcribe("https://www.instagram.com/reel/ABCDEFGH/", language="nl", use_captions=False)
     assert fake_ytdlp == [("large-v3-turbo", "nl")]
 
 
 def test_english_only_model_rejects_other_language():
     with pytest.raises(core.TranscriptionError, match="only understands English"):
-        core.transcribe("https://instagram.com/reel/x", language="nl", model="small.en")
+        core.transcribe("https://www.instagram.com/reel/ABCDEFGH/", language="nl", model="small.en")
 
 
 def test_rejects_things_that_are_not_links_or_files():
     with pytest.raises(core.TranscriptionError, match="not a web link"):
         core.transcribe("not a link")
     with pytest.raises(core.TranscriptionError, match="no model called"):
-        core.transcribe("https://x.com/v", model="gpt")
+        core.transcribe("https://www.youtube.com/watch?v=abcdefghijk", model="gpt")
 
 
 def test_windows_firefox_profile_is_found_under_wsl(tmp_path, monkeypatch):

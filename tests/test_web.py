@@ -20,7 +20,7 @@ def test_transcribe_returns_text_and_files(monkeypatch):
         return Transcript([Segment(0, 1, "Hi.")], "en", "captions", "Title", url, 5)
 
     monkeypatch.setattr(core, "transcribe", fake)
-    res = client.post("/api/transcribe", json={"url": "https://youtube.com/shorts/x", "language": "en"})
+    res = client.post("/api/transcribe", json={"url": "https://youtube.com/shorts/Xu-QfE_1ksk", "language": "en"})
     assert res.status_code == 200
     data = res.json()
     assert data["text"] == "Hi."
@@ -32,14 +32,14 @@ def test_user_errors_are_shown(monkeypatch):
         raise core.TranscriptionError("too long", kind="video", title="Video too long")
 
     monkeypatch.setattr(core, "transcribe", fail)
-    res = client.post("/api/transcribe", json={"url": "https://youtube.com/x"})
+    res = client.post("/api/transcribe", json={"url": "https://www.youtube.com/watch?v=jNQXAC9IVRw"})
     assert res.status_code == 422 and res.json()["detail"]["title"] == "Video too long" and res.json()["detail"]["kind"] == "video"
 
 
 def test_input_validation():
     assert client.post("/api/transcribe", json={"url": "file:///etc/passwd"}).status_code == 400
-    assert client.post("/api/transcribe", json={"url": "https://x.com", "language": "<script>"}).status_code in (400, 422)
-    assert client.post("/api/transcribe", json={"url": "https://x.com", "model": "evil/repo"}).status_code == 400
+    assert client.post("/api/transcribe", json={"url": "https://www.youtube.com/watch?v=jNQXAC9IVRw", "language": "<script>"}).status_code in (400, 422)
+    assert client.post("/api/transcribe", json={"url": "https://www.youtube.com/watch?v=jNQXAC9IVRw", "model": "evil/repo"}).status_code == 400
 
 
 def test_transcripts_are_saved_listed_and_deduplicated(monkeypatch, tmp_path):
@@ -51,7 +51,7 @@ def test_transcripts_are_saved_listed_and_deduplicated(monkeypatch, tmp_path):
         return Transcript([Segment(0, 1, "Saved text.")], "en", "captions", "My Video", url, 5)
 
     monkeypatch.setattr(core, "transcribe", fake)
-    url = "https://www.youtube.com/watch?v=abc123"
+    url = "https://www.youtube.com/watch?v=abc123defgh"
     data = app_client.post("/api/transcribe", json={"url": url}).json()
     assert data["saved_id"].endswith(" - My Video.txt")
     page = app_client.get("/api/transcripts").json()
@@ -60,7 +60,7 @@ def test_transcripts_are_saved_listed_and_deduplicated(monkeypatch, tmp_path):
     assert item["text"] == "Saved text." and item["link"] == url
 
     # Same video again: offered the existing transcript instead of a duplicate.
-    again = app_client.post("/api/transcribe", json={"url": "https://youtu.be/abc123"}).json()
+    again = app_client.post("/api/transcribe", json={"url": "https://youtu.be/abc123defgh"}).json()
     assert again["existing"]["id"] == data["saved_id"] and len(calls) == 1
     forced = app_client.post("/api/transcribe", json={"url": url, "force": True}).json()
     assert "saved_id" in forced and len(calls) == 2

@@ -79,12 +79,15 @@ def _get_model(name: str, device: str):
 
 
 def transcribe_file(
-    path: str | Path,
+    path,
     model: str = DEFAULT_MODEL,
     language: str | None = None,
     device: str = "auto",
 ) -> tuple[list[Segment], str | None, float]:
-    """Transcribe an audio/video file. Returns (segments, detected language, duration)."""
+    """Transcribe a file path or an array of 16 kHz mono samples.
+
+    Returns (segments, detected language, duration in seconds).
+    """
     if model not in MODELS:
         raise ValueError(f"Unknown model {model!r}; choose from {', '.join(MODELS)}")
     if model in ENGLISH_ONLY_MODELS:
@@ -100,7 +103,8 @@ def transcribe_file(
             with _lock:
                 whisper = _get_model(model, dev)
                 segments, info = whisper.transcribe(
-                    str(path), language=language, vad_filter=True, beam_size=5
+                    path if hasattr(path, "dtype") else str(path),
+                    language=language, vad_filter=True, beam_size=5
                 )
                 result = [Segment(s.start, s.end, s.text.strip()) for s in segments]
             return result, info.language, info.duration
