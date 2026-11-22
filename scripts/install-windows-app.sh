@@ -45,7 +45,7 @@ EOF
 
 echo "→ Creating the Windows Python environment (first time takes a minute)"
 "$UV" venv -q --allow-existing --python 3.12 "$APPDIR_WIN\\venv"
-"$UV" pip install -q --python "$APPDIR_WIN\\venv\\Scripts\\python.exe" "pywebview>=5"
+"$UV" pip install -q -U --python "$APPDIR_WIN\\venv\\Scripts\\python.exe" "pywebview>=5"
 
 echo "→ Adding shortcuts"
 ps "

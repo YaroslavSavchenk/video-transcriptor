@@ -24,9 +24,9 @@ Requires Python 3.10+. Using [uv](https://docs.astral.sh/uv/) (or plain `pip`):
 ```bash
 git clone https://github.com/YaroslavSavchenk/video-transcriptor.git
 cd video-transcriptor
-uv venv && uv pip install -e .
-# Optional, for NVIDIA GPUs:
-uv pip install -e ".[gpu]"
+uv sync
+# Or, with an NVIDIA GPU:
+uv sync --extra gpu
 ```
 
 ffmpeg isn't required. Audio is decoded through PyAV, which ships with its own ffmpeg libraries.
@@ -99,14 +99,22 @@ video-transcriptor serve --cookies-from-browser firefox
 
 ## Known limitations
 
-- Platforms change often and can break downloading. Keep yt-dlp up to date with `uv pip install -U yt-dlp`.
+- Platforms change often and can break downloading. When a platform suddenly stops working, update first (see below).
 - A few individual TikTok posts are blocked for downloading from some networks ("IP address is blocked"); the app says so clearly.
 - YouTube's automatic captions have no or weak punctuation. To get Whisper's output instead, untick "Use platform captions" or pass `--no-captions`.
+
+## Updating
+
+```bash
+scripts/update.sh
+```
+
+This gets the latest version, installs the pinned dependencies (including yt-dlp, which is kept current by Dependabot), and updates the Windows app if it's installed.
 
 ## Development
 
 ```bash
-uv pip install -e ".[dev]"
+uv sync --extra dev
 .venv/bin/pytest
 ```
 
