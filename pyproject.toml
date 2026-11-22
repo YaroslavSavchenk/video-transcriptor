@@ -9,7 +9,7 @@ description = "Paste a link to a Reel, Short or TikTok and get a transcript. Run
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "yt-dlp[default,curl-cffi]>=2025.11.12",  # curl-cffi: TikTok needs browser impersonation
     "deno>=2.0",  # JavaScript runtime that yt-dlp needs for YouTube
