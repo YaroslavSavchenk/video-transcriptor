@@ -10,21 +10,78 @@ Flow for a URL:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import sys
 import tempfile
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
 from . import asr, captions, links, sandbox
-from .errors import TranscriptionError, classify_download_error
+from .errors import Cancelled, TranscriptionError, classify_download_error
 from .models import Segment, Transcript
 
 log = logging.getLogger(__name__)
 
 MAX_DURATION_SECONDS = 10 * 60
 MAX_FILESIZE_BYTES = 500 * 1024 * 1024
+TEMP_PREFIX = "video-transcriptor-"
+
+
+@dataclass
+class Control:
+    """Lets a caller follow progress and cancel a running transcription."""
+
+    on_progress: Callable[[str, float | None], None] | None = None
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+
+    def stage(self, text: str, fraction: float | None = None) -> None:
+        self.check()
+        if self.on_progress:
+            self.on_progress(text, fraction)
+
+    def check(self) -> None:
+        if self.cancel_event.is_set():
+            raise Cancelled()
+
+
+def _new_temp_dir() -> Path:
+    tmpdir = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
+    (tmpdir / ".owner").write_text(str(os.getpid()))
+    return tmpdir
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def cleanup_stale_temp_dirs() -> int:
+    """Remove temp folders left behind when the app was closed or killed mid-transcription."""
+    removed = 0
+    for d in Path(tempfile.gettempdir()).glob(TEMP_PREFIX + "*"):
+        try:
+            if _alive(int((d / ".owner").read_text())):
+                continue  # still in use by a running transcription
+        except (OSError, ValueError):
+            try:
+                if time.time() - d.stat().st_mtime < 3600:  # no owner: only clean when clearly old
+                    continue
+            except OSError:
+                continue
+        shutil.rmtree(d, ignore_errors=True)
+        removed += 1
+    return removed
 
 
 def _is_url(source: str) -> bool:
@@ -111,10 +168,17 @@ def _transcribe_url(
     cookies_from_browser: str | None,
     cookies_file: str | None,
     keep_media_dir: str | None,
+    control: Control,
 ) -> Transcript:
     import yt_dlp
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="video-transcriptor-"))
+    def on_download(d: dict) -> None:
+        control.check()  # raising here aborts the download
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate")
+            control.stage("Downloading audio…", d.get("downloaded_bytes", 0) / total if total else None)
+
+    tmpdir = _new_temp_dir()
     try:
         opts = _ydl_options(
             cookies_from_browser,
@@ -124,11 +188,14 @@ def _transcribe_url(
             format="bestaudio[format_id!=audio]/best[acodec!=none]/best",
             outtmpl=str(tmpdir / "audio.%(ext)s"),
             max_filesize=MAX_FILESIZE_BYTES,
+            progress_hooks=[on_download],
         )
         with yt_dlp.YoutubeDL(opts) as ydl:
+            control.stage("Reading the video's details…")
             try:
                 info = _first_entry(ydl.extract_info(url, download=False))
             except yt_dlp.utils.DownloadError as exc:
+                control.check()
                 raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
             if info.get("live_status") in ("is_live", "is_upcoming"):
@@ -141,15 +208,18 @@ def _transcribe_url(
             title = info.get("title")
 
             if use_captions:
+                control.stage("Looking for captions…")
                 transcript = _try_captions(ydl, info, language)
                 if transcript:
                     transcript.title, transcript.url, transcript.duration = title, url, duration
                     transcript.extra.update(_video_meta(info))
                     return transcript
 
+            control.stage("Downloading audio…", 0.0)
             try:
                 ydl.process_ie_result(info, download=True)
             except yt_dlp.utils.DownloadError as exc:
+                control.check()
                 raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
         files = [p for p in tmpdir.iterdir()
@@ -159,9 +229,10 @@ def _transcribe_url(
                                      kind="platform", title="Couldn't download the audio",
                                      hint="Try again in a minute. If it keeps failing, update the app.")
         # Decode in an isolated, resource-limited process: the file comes from the internet.
-        audio = sandbox.decode_audio(files[0], MAX_DURATION_SECONDS)
+        control.stage("Preparing the audio…")
+        audio = sandbox.decode_audio(files[0], MAX_DURATION_SECONDS, cancel=control.cancel_event)
         _check_duration(len(audio) / sandbox.SAMPLE_RATE)
-        segments, detected, audio_duration = _run_asr(audio, model, language, device)
+        segments, detected, audio_duration = _run_asr(audio, model, language, device, control)
         if keep_media_dir:
             Path(keep_media_dir).mkdir(parents=True, exist_ok=True)
             shutil.copy2(files[0], keep_media_dir)
@@ -199,9 +270,13 @@ def _try_captions(ydl, info: dict, language: str | None) -> Transcript | None:
     return Transcript(segments, lang, "captions", extra={"automatic_captions": is_auto})
 
 
-def _run_asr(audio, model: str, language: str | None, device: str):
+def _run_asr(audio, model: str, language: str | None, device: str, control: Control):
+    control.stage("Loading the speech model…")
     try:
-        return asr.transcribe_file(audio, model, language, device)
+        return asr.transcribe_file(audio, model, language, device,
+                                   on_progress=lambda f: control.stage("Transcribing…", f))
+    except Cancelled:
+        raise
     except Exception as exc:
         log.exception("Speech recognition failed")
         raise TranscriptionError(
@@ -212,14 +287,16 @@ def _run_asr(audio, model: str, language: str | None, device: str):
         ) from exc
 
 
-def _transcribe_local(path: Path, *, language: str | None, model: str, device: str) -> Transcript:
-    tmpdir = Path(tempfile.mkdtemp(prefix="video-transcriptor-"))
+def _transcribe_local(path: Path, *, language: str | None, model: str, device: str,
+                      control: Control) -> Transcript:
+    tmpdir = _new_temp_dir()
     try:
-        audio = sandbox.decode_audio(path, MAX_DURATION_SECONDS, workdir=tmpdir)
+        control.stage("Preparing the audio…")
+        audio = sandbox.decode_audio(path, MAX_DURATION_SECONDS, workdir=tmpdir, cancel=control.cancel_event)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
     _check_duration(len(audio) / sandbox.SAMPLE_RATE)
-    segments, detected, duration = _run_asr(audio, model, language, device)
+    segments, detected, duration = _run_asr(audio, model, language, device, control)
     return Transcript(segments, detected, "speech-recognition", path.name, None, duration, extra={"model": model})
 
 
@@ -233,8 +310,13 @@ def transcribe(
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
     keep_media_dir: str | None = None,
+    control: Control | None = None,
 ) -> Transcript:
-    """Transcribe a video link (Instagram, YouTube, TikTok, ...) or a local file."""
+    """Transcribe a video link (Instagram, YouTube, TikTok, ...) or a local file.
+
+    Pass a `Control` to follow progress or cancel; cancelling raises `Cancelled`.
+    """
+    control = control or Control()
     source = source.strip()
     language = (language or "").strip().lower() or None
     if model is None:
@@ -262,9 +344,10 @@ def transcribe(
             cookies_from_browser=cookies_from_browser,
             cookies_file=cookies_file,
             keep_media_dir=keep_media_dir,
+            control=control,
         )
     path = Path(source).expanduser()
     if path.is_file():
-        return _transcribe_local(path, language=language, model=model, device=device)
+        return _transcribe_local(path, language=language, model=model, device=device, control=control)
     raise TranscriptionError("That's not a web link (http/https) or an existing file.", kind="link",
                              title="Not a link", hint="Paste the full link, starting with https://")

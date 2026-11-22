@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
+from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from . import asr, core, formats, links, storage
 from .errors import TranscriptionError
+from .jobs import JobManager
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +78,17 @@ def create_app(
     127.0.0.1 to read transcripts or start downloads that use the user's cookies.
     Pass {"*"} to allow any host (only sensible on a trusted network).
     """
-    app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None, openapi_url=None)
+    jobs = JobManager()
+    core.cleanup_stale_temp_dirs()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        # Closing the app (SIGTERM) cancels running work so temp files get cleaned up.
+        await asyncio.to_thread(jobs.shutdown)
+
+    app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError):
@@ -109,11 +122,11 @@ def create_app(
     def options() -> dict:
         return {"models": list(asr.MODELS), "default_model": asr.DEFAULT_MODEL,
                 "english_only_models": list(asr.ENGLISH_ONLY_MODELS),
-                "max_minutes": core.MAX_DURATION_SECONDS // 60, "save_dir": storage.display_path(save_dir)}
+                "max_minutes": core.MAX_DURATION_SECONDS // 60, "save_dir": storage.display_path(save_dir),
+                "running_job": (job.id if (job := jobs.running()) else None)}
 
-    # A plain `def` endpoint runs in FastAPI's thread pool, so the server stays responsive.
-    @app.post("/api/transcribe")
-    def transcribe(req: TranscribeRequest) -> dict:
+    def prepare(req: TranscribeRequest) -> tuple[str, str | None, dict | None]:
+        """Validate a request. Returns (clean url, language, existing transcript or None)."""
         try:
             url = links.clean_link(req.url)
         except TranscriptionError as exc:
@@ -123,25 +136,16 @@ def create_app(
             raise _user_error("settings", "Unknown language", "Choose a language from the list.")
         if req.model is not None and req.model not in asr.MODELS:
             raise _user_error("settings", "Unknown model", "Choose a model from the list.")
-        if not req.force and (existing := library.find_by_url(url)):
-            return {"existing": existing}
+        existing = None if req.force else library.find_by_url(url)
+        return url, language, existing
 
+    def run(req: TranscribeRequest, url: str, language: str | None, control: core.Control) -> dict:
         started = time.monotonic()
-        try:
-            t = core.transcribe(
-                url, language=language, model=req.model, use_captions=req.use_captions,
-                cookies_from_browser=cookies_from_browser, cookies_file=cookies_file,
-            )
-        except TranscriptionError as exc:
-            raise HTTPException(422, exc.to_dict()) from exc
-        except Exception as exc:
-            log.exception("Transcription failed")
-            raise HTTPException(500, TranscriptionError(
-                "An unexpected error happened inside the app.", kind="app",
-                title="Something went wrong in the app",
-                hint="Try again. If it keeps happening, restart the app or update it.",
-                technical=f"{type(exc).__name__}: {exc}").to_dict()) from exc
-
+        t = core.transcribe(
+            url, language=language, model=req.model, use_captions=req.use_captions,
+            cookies_from_browser=cookies_from_browser, cookies_file=cookies_file, control=control,
+        )
+        control.stage("Saving…")
         result = t.to_dict()
         result["elapsed_seconds"] = round(time.monotonic() - started, 1)
         result["files"] = {fmt: formats.render(t, fmt) for fmt in ("txt", "srt", "vtt")}
@@ -151,6 +155,49 @@ def create_app(
             log.exception("Could not save transcript")
             result["save_error"] = str(exc)
         return result
+
+    @app.post("/api/jobs")
+    def start_job(req: TranscribeRequest) -> dict:
+        url, language, existing = prepare(req)
+        if existing:
+            return {"existing": existing}
+        try:
+            job = jobs.start(lambda control: run(req, url, language, control))
+        except TranscriptionError as exc:
+            raise HTTPException(409, exc.to_dict()) from exc
+        return job.view()
+
+    @app.get("/api/jobs/{job_id}")
+    def job_status(job_id: str) -> dict:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, TranscriptionError(
+                "This transcription isn't known (anymore). The app may have restarted.",
+                kind="app", title="Transcription not found", hint="Start it again.").to_dict())
+        return job.view()
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str) -> dict:
+        job = jobs.cancel(job_id)
+        return job.view() if job else {"status": "unknown"}
+
+    # Synchronous variant for scripts: same as a job, but waits for the result.
+    @app.post("/api/transcribe")
+    def transcribe(req: TranscribeRequest) -> dict:
+        url, language, existing = prepare(req)
+        if existing:
+            return {"existing": existing}
+        try:
+            return run(req, url, language, core.Control())
+        except TranscriptionError as exc:
+            raise HTTPException(422, exc.to_dict()) from exc
+        except Exception as exc:
+            log.exception("Transcription failed")
+            raise HTTPException(500, TranscriptionError(
+                "An unexpected error happened inside the app.", kind="app",
+                title="Something went wrong in the app",
+                hint="Try again. If it keeps happening, restart the app or update it.",
+                technical=f"{type(exc).__name__}: {exc}").to_dict()) from exc
 
     @app.get("/api/transcripts")
     def transcripts(q: str = Query("", max_length=200), offset: int = Query(0, ge=0),

@@ -45,11 +45,11 @@ def fake_ytdlp(monkeypatch):
     monkeypatch.setitem(sys.modules, "yt_dlp", module)
     import numpy as np
 
-    monkeypatch.setattr(core.sandbox, "decode_audio", lambda path, max_s, workdir=None: np.zeros(16000 * 30, "float32"))
+    monkeypatch.setattr(core.sandbox, "decode_audio", lambda path, max_s, workdir=None, cancel=None: np.zeros(16000 * 30, "float32"))
     FakeYDL.info, FakeYDL.downloaded, FakeYDL.tmpdirs = {}, False, []
     calls = []
 
-    def fake_asr(path, model, language, device):
+    def fake_asr(path, model, language, device, on_progress=None):
         calls.append((model, language))
         return [Segment(0, 1, "from speech")], language or "en", 30.0
 

@@ -170,3 +170,7 @@ def classify_download_error(exc: Exception, url: str, cookies_enabled: bool = Fa
                "The downloader ran into a problem it doesn't recognise.",
                "Check that the link works in your browser. If it does, update the app "
                "(scripts/update.sh) and try again.")
+
+
+class Cancelled(Exception):
+    """The user cancelled the transcription. Not an error: nothing to show."""

@@ -83,6 +83,7 @@ def transcribe_file(
     model: str = DEFAULT_MODEL,
     language: str | None = None,
     device: str = "auto",
+    on_progress=None,
 ) -> tuple[list[Segment], str | None, float]:
     """Transcribe a file path or an array of 16 kHz mono samples.
 
@@ -106,7 +107,11 @@ def transcribe_file(
                     path if hasattr(path, "dtype") else str(path),
                     language=language, vad_filter=True, beam_size=5
                 )
-                result = [Segment(s.start, s.end, s.text.strip()) for s in segments]
+                result = []
+                for s in segments:  # lazy: the actual work happens while iterating
+                    result.append(Segment(s.start, s.end, s.text.strip()))
+                    if on_progress:  # may raise Cancelled, which stops the work right here
+                        on_progress(min(1.0, s.end / info.duration) if info.duration else None)
             return result, info.language, info.duration
         except RuntimeError as exc:
             # Typically missing CUDA/cuDNN libraries: fall back to CPU.
