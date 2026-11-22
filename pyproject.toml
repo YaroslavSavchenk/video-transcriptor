@@ -14,7 +14,7 @@ dependencies = [
     "yt-dlp[default]>=2025.11.12",
     "deno>=2.0",  # JavaScript runtime that yt-dlp needs for YouTube
     "faster-whisper>=1.1",
-    "av<16",  # faster-whisper 1.2 uses an argument removed in PyAV 16
+    "av<19",  # faster-whisper 1.2 uses av.open(metadata_errors=...), removed in PyAV 19
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
