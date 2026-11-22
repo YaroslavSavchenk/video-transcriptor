@@ -54,7 +54,17 @@ def main(argv: list[str] | None = None) -> int:
 
         from .web import create_app
 
-        app = create_app(args.cookies_from_browser, args.cookies, Path(args.save_dir) if args.save_dir else None)
+        from .web import LOOPBACK_HOSTS
+
+        hosts = None
+        if args.host not in LOOPBACK_HOSTS:
+            # Listening beyond this computer: anyone on the network can use the tool (and the
+            # browser cookies it was started with). There is no login, so warn loudly.
+            print("WARNING: listening on a non-local address. Everyone on your network can use "
+                  "this tool and its cookies. Only do this on a trusted network.", file=sys.stderr)
+            hosts = {"*"} if args.host in ("0.0.0.0", "::") else {*LOOPBACK_HOSTS, args.host}
+        app = create_app(args.cookies_from_browser, args.cookies,
+                         Path(args.save_dir) if args.save_dir else None, hosts)
         print(f"\n  Open http://{args.host}:{args.port} in your browser and paste a link.\n")
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
         return 0

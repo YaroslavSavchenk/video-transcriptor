@@ -201,7 +201,8 @@ function show({ title, link, chips, text, saved, file, files }) {
   current = { file, title, files };
   const meta = $("meta");
   meta.replaceChildren(el("h2", null, title || "Transcript"));
-  if (link) { const a = el("a", null, link); a.href = link; a.target = "_blank"; a.rel = "noopener"; meta.append(a); }
+  // Only real web links become clickable (no javascript: or file: URLs from edited files).
+  if (link && /^https?:\/\//i.test(link)) { const a = el("a", null, link); a.href = link; a.target = "_blank"; a.rel = "noopener noreferrer"; meta.append(a); }
   for (const c of chips) if (c) meta.append(el("span", "chip", c));
   $("saved").textContent = saved || "";
   $("saved").style.display = saved ? "block" : "none";
