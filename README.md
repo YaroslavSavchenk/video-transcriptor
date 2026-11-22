@@ -7,7 +7,7 @@ Built mainly for **English** videos. Other languages (Dutch, German, …) work t
 ## Features
 
 - Windows desktop app (with the tool running in WSL), or a local web page: paste a link, copy the transcript
-- Every transcript is saved automatically as `YYYY-MM-DD - <video name>.txt` in `Documents/Transcripts`, and listed in the app
+- Every transcript is saved automatically as `YYYY-MM-DD - <video name>.txt` in the `transcripts/` folder of the app (ignored by git), and listed in the app
 - Instagram Reels, YouTube videos and Shorts, TikTok, and other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports
 - Videos up to 10 minutes
 - Runs on your own computer and is free: no account or API key needed
@@ -48,7 +48,7 @@ It needs [uv for Windows](https://docs.astral.sh/uv/) (`winget install astral-sh
 .venv/bin/video-transcriptor serve
 ```
 
-Open <http://127.0.0.1:8000>, paste a link and press **Transcribe**. Each transcript is saved to `Documents/Transcripts` (your Windows Documents folder under WSL). Use `--save-dir` to choose another folder. The first time you use a model it downloads once (from about 250 MB up to 1.6 GB).
+Open <http://127.0.0.1:8000>, paste a link and press **Transcribe**. Each transcript is saved to the `transcripts/` folder inside the project. Use `--save-dir` to choose another folder. The first time you use a model it downloads once (from about 250 MB up to 1.6 GB).
 
 ### Command line
 

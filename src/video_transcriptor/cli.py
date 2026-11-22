@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
     serve.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
     serve.add_argument("--save-dir", metavar="DIR",
-                       help="where every transcript is saved (default: Documents/Transcripts)")
+                       help="where every transcript is saved (default: the transcripts folder inside the app folder)")
     _add_cookie_args(serve)
 
     tr = sub.add_parser("transcribe", help="transcribe a link or local file on the command line")
