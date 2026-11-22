@@ -18,7 +18,7 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
   3. Otherwise fetch the **audio stream only** (no video) into a temporary directory and normalise it with ffmpeg (16 kHz mono).
   4. Transcribe locally with an open-source speech-to-text model (faster-whisper).
   5. Delete all temporary media automatically. Only the transcript remains.
-- **Language**: automatic language detection, with an option to force a language (e.g. `--lang nl`).
+- **Language**: **English is the primary target** (English-only models `small.en` / `distil-large-v3` by default). Other languages are supported via multilingual models (`large-v3-turbo`), chosen automatically when another language is selected.
 - **Output formats**: plain text (`.txt`), subtitles (`.srt`, `.vtt`), and `.json` with timestamped segments.
 - **Interface**: a **local web page** as the main interface. Run one command, open `http://localhost:8000`, paste a link, and the transcript appears on the page with *Copy* and *Download (.txt / .srt)* buttons and a language/model option. Runs entirely on your own machine.
 - **CLI** as a secondary interface for power users, e.g. `transcribe <url> [--format srt] [--lang nl] [--model small]`. Both share the same core.
@@ -51,8 +51,9 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
 | --- | --- |
 | Language | Python 3.10+ |
 | Download | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
-| Audio processing | [ffmpeg](https://ffmpeg.org/) |
+| Audio decoding | PyAV (bundled ffmpeg libraries; no system ffmpeg needed) |
 | Speech-to-text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (Whisper models, CPU/GPU) |
+| JS runtime for YouTube | [deno](https://pypi.org/project/deno/) (installed as a Python dependency) |
 | Web UI | [FastAPI](https://fastapi.tiangolo.com/) + a single plain HTML page |
 | CLI | `argparse` or `typer` |
 
@@ -61,7 +62,7 @@ The stack can still change based on research into existing tools.
 ## Success criteria
 
 - A 60-second Reel or Short transcribes on an average laptop CPU in under a minute with the `small` model.
-- Dutch and English speech come out readable without manual fixes for clear audio.
+- English speech (and Dutch as a secondary language) comes out readable without manual fixes for clear audio.
 - One command, no account or API key required.
 
 ## Legal note
