@@ -119,7 +119,9 @@ def _transcribe_url(
         opts = _ydl_options(
             cookies_from_browser,
             cookies_file,
-            format="bestaudio/best",
+            # TikTok's separate "audio" format is the post's sound track, which can be a
+            # licensed song instead of what's said in the video, so take the video's own audio.
+            format="bestaudio[format_id!=audio]/best[acodec!=none]/best",
             outtmpl=str(tmpdir / "audio.%(ext)s"),
             max_filesize=MAX_FILESIZE_BYTES,
         )
@@ -150,7 +152,8 @@ def _transcribe_url(
             except yt_dlp.utils.DownloadError as exc:
                 raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
-        files = [p for p in tmpdir.iterdir() if p.is_file() and not p.name.endswith(".part")]
+        files = [p for p in tmpdir.iterdir()
+                 if p.is_file() and p.name.startswith("audio.") and not p.name.endswith(".part")]
         if not files:
             raise TranscriptionError("The video was found, but its audio couldn't be downloaded.",
                                      kind="platform", title="Couldn't download the audio",
