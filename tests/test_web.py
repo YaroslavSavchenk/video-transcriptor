@@ -42,26 +42,41 @@ def test_input_validation():
     assert client.post("/api/transcribe", json={"url": "https://x.com", "model": "evil/repo"}).status_code == 400
 
 
-def test_transcripts_are_saved_and_listed(monkeypatch, tmp_path):
+def test_transcripts_are_saved_listed_and_deduplicated(monkeypatch, tmp_path):
     app_client = TestClient(web.create_app(save_dir=tmp_path), base_url="http://127.0.0.1:8765")
+    calls = []
 
     def fake(url, **kwargs):
+        calls.append(url)
         return Transcript([Segment(0, 1, "Saved text.")], "en", "captions", "My Video", url, 5)
 
     monkeypatch.setattr(core, "transcribe", fake)
-    data = app_client.post("/api/transcribe", json={"url": "https://youtube.com/x"}).json()
-    assert data["saved_file"].endswith(" - My Video.txt")
-    items = app_client.get("/api/history").json()
-    assert [i["file"] for i in items] == [data["saved_file"]]
-    item = app_client.get(f"/api/history/{data['saved_file']}").json()
-    assert item["text"] == "Saved text." and item["meta"]["link"] == "https://youtube.com/x"
-    assert app_client.get("/api/history/..%2F..%2Fetc%2Fpasswd").status_code == 404
+    url = "https://www.youtube.com/watch?v=abc123"
+    data = app_client.post("/api/transcribe", json={"url": url}).json()
+    assert data["saved_id"].endswith(" - My Video.txt")
+    page = app_client.get("/api/transcripts").json()
+    assert page["total"] == 1 and page["items"][0]["id"] == data["saved_id"]
+    item = app_client.get("/api/transcript", params={"id": data["saved_id"]}).json()
+    assert item["text"] == "Saved text." and item["link"] == url
+
+    # Same video again: offered the existing transcript instead of a duplicate.
+    again = app_client.post("/api/transcribe", json={"url": "https://youtu.be/abc123"}).json()
+    assert again["existing"]["id"] == data["saved_id"] and len(calls) == 1
+    forced = app_client.post("/api/transcribe", json={"url": url, "force": True}).json()
+    assert "saved_id" in forced and len(calls) == 2
+
+    assert app_client.get("/api/transcripts", params={"q": "saved text"}).json()["total"] == 2
+    assert app_client.get("/api/transcript", params={"id": "../../etc/passwd"}).status_code == 404
+    assert app_client.delete("/api/transcript", params={"id": data["saved_id"]}).json()["ok"]
+    assert app_client.get("/api/transcripts").json()["total"] == 1
+    restored = app_client.post("/api/transcript/restore", json={"id": data["saved_id"]}).json()
+    assert restored["id"] == data["saved_id"]
 
 
 def test_dns_rebinding_and_cross_site_requests_are_blocked():
-    assert client.get("/api/history", headers={"Host": "evil.example"}).status_code == 403
-    assert client.get("/api/history", headers={"Host": "127.0.0.1:8765"}).status_code == 200
-    assert client.get("/api/history", headers={"Host": "[::1]:8765"}).status_code == 200
+    assert client.get("/api/transcripts", headers={"Host": "evil.example"}).status_code == 403
+    assert client.get("/api/transcripts", headers={"Host": "127.0.0.1:8765"}).status_code == 200
+    assert client.get("/api/transcripts", headers={"Host": "[::1]:8765"}).status_code == 200
     res = client.post("/api/open-folder", json={}, headers={"Origin": "https://evil.example"})
     assert res.status_code == 403
     ok = client.get("/api/options", headers={"Origin": "http://127.0.0.1:8765"})

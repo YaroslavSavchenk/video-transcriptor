@@ -7,7 +7,8 @@ Built mainly for **English** videos. Other languages (Dutch, German, …) work t
 ## Features
 
 - Windows desktop app (with the tool running in WSL), or a local web page: paste a link, copy the transcript
-- Every transcript is saved automatically as `YYYY-MM-DD - <video name>.txt` in the `transcripts/` folder of the app (ignored by git), and listed in the app
+- Every transcript is saved automatically as `YYYY-MM-DD - <video name>.txt` in month folders under `transcripts/` (ignored by git)
+- Transcript library built for thousands of transcripts: full-text search, grouped by date, infinite scroll, delete with undo, and duplicate detection (the same video isn't transcribed twice)
 - Instagram Reels, YouTube videos and Shorts, TikTok, and other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports
 - Videos up to 10 minutes
 - Runs on your own computer and is free: no account or API key needed
