@@ -18,11 +18,13 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
 
-from .errors import TranscriptionError
+from .errors import Cancelled, TranscriptionError
 
 SAMPLE_RATE = 16000
 TIMEOUT_SECONDS = 180
@@ -51,22 +53,32 @@ decode_audio(src, sampling_rate=16000).astype("float32").tofile(dst)
 """
 
 
-def decode_audio(path: Path, max_seconds: int, workdir: Path | None = None) -> np.ndarray:
+def decode_audio(path: Path, max_seconds: int, workdir: Path | None = None,
+                 cancel: threading.Event | None = None) -> np.ndarray:
     """Return mono 16 kHz samples, or raise a TranscriptionError for unreadable/hostile files."""
     fd, out_name = tempfile.mkstemp(suffix=".f32", dir=str(workdir or path.parent))
     os.close(fd)
     out = Path(out_name)
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR")}
     try:
-        try:
-            out_limit = (max_seconds + 60) * SAMPLE_RATE * 4
-            proc = subprocess.run(
-                [sys.executable, "-I", "-c", _CHILD, str(path), str(out),
-                 str(MEMORY_LIMIT_BYTES), str(TIMEOUT_SECONDS), str(out_limit)],
-                capture_output=True, timeout=TIMEOUT_SECONDS, env=env, start_new_session=True,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise _unreadable("Decoding the audio took far too long.") from exc
+        out_limit = (max_seconds + 60) * SAMPLE_RATE * 4
+        proc = subprocess.Popen(
+            [sys.executable, "-I", "-c", _CHILD, str(path), str(out),
+             str(MEMORY_LIMIT_BYTES), str(TIMEOUT_SECONDS), str(out_limit)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, start_new_session=True,
+        )
+        deadline = time.monotonic() + TIMEOUT_SECONDS
+        while True:
+            try:
+                _, stderr = proc.communicate(timeout=0.25)
+                break
+            except subprocess.TimeoutExpired:
+                if (cancel and cancel.is_set()) or time.monotonic() > deadline:
+                    proc.kill()
+                    proc.communicate()
+                    if cancel and cancel.is_set():
+                        raise Cancelled() from None
+                    raise _unreadable("Decoding the audio took far too long.") from None
         if proc.returncode == EXIT_NO_AUDIO:
             raise TranscriptionError(
                 "The video has no sound track. Either it's silent, or the platform only gave the "
@@ -75,7 +87,7 @@ def decode_audio(path: Path, max_seconds: int, workdir: Path | None = None) -> n
                 hint="Check in your browser that the video has sound. If it does, log in to the "
                      "platform in Firefox and try again.")
         if proc.returncode != 0:
-            detail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [f"exit code {proc.returncode}"]
+            detail = stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [f"exit code {proc.returncode}"]
             raise _unreadable(detail[0])
         audio = np.fromfile(out, dtype=np.float32)
     finally:

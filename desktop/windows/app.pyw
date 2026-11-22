@@ -107,9 +107,14 @@ def main() -> None:
     try:
         webview.start(boot, (window, state), private_mode=False)
     finally:
+        # Ask the server to stop and give it time to cancel running work and clean up.
         stop_server()
-        if state["proc"] and state["proc"].poll() is None:
-            state["proc"].terminate()
+        proc = state["proc"]
+        if proc and proc.poll() is None:
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
 
 
 if __name__ == "__main__":

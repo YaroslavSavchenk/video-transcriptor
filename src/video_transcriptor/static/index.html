@@ -75,9 +75,15 @@
   .options { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; color: var(--muted); font-size: .88rem; align-items: center; }
   .options label { display: flex; gap: 6px; align-items: center; }
   select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-  .status { margin-top: 18px; color: var(--muted); display: none; align-items: center; gap: 10px; }
-  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress { margin-top: 18px; display: none; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .progress-top { display: flex; align-items: center; gap: 12px; }
+  .progress-top .stage { flex: 1; font-weight: 600; }
+  .progress-top .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--hover); border-radius: 99px; margin-top: 10px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width .3s ease; }
+  .bar.indeterminate .bar-fill { width: 30%; position: absolute; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { left: -30%; } to { left: 100%; } }
+  .progress .sub { color: var(--muted); font-size: .8rem; margin-top: 6px; }
   .notice { margin-top: 18px; padding: 12px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); display: none; align-items: center; gap: 12px; flex-wrap: wrap; }
   .notice span { flex: 1; min-width: 200px; }
   .result { margin-top: 22px; display: none; }
@@ -158,7 +164,15 @@
       </div>
     </form>
 
-    <div class="status" id="status"><div class="spinner"></div><span id="status-text">Working…</span></div>
+    <div class="progress" id="progress" aria-live="polite">
+      <div class="progress-top">
+        <span class="stage" id="stage">Starting…</span>
+        <span class="pct" id="pct"></span>
+        <button class="ghost" id="cancel" type="button">Cancel</button>
+      </div>
+      <div class="bar" id="bar"><div class="bar-fill" id="bar-fill"></div></div>
+      <div class="sub" id="elapsed"></div>
+    </div>
     <div class="notice" id="existing">
       <span id="existing-text"></span>
       <button class="ghost" id="again" type="button">Transcribe again</button>
@@ -380,6 +394,57 @@ async function openSaved(id, keepNotice) {
   } catch (err) { showError(err); }
 }
 
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let jobId = null;
+
+function showProgress(job) {
+  $("progress").style.display = "block";
+  $("stage").textContent = job.stage || "Working…";
+  const known = typeof job.progress === "number";
+  $("bar").classList.toggle("indeterminate", !known);
+  $("bar-fill").style.width = known ? `${Math.round(job.progress * 100)}%` : "";
+  $("pct").textContent = known ? `${Math.round(job.progress * 100)}%` : "";
+  const s = Math.round(job.elapsed || 0);
+  $("elapsed").textContent = `${s}s` + (job.stage === "Loading the speech model…" ? " · the first time, the model is downloaded once" : "");
+}
+
+function showResult(data) {
+  show({
+    id: data.saved_id, link: data.url, text: data.text, files: data.files,
+    title: data.saved_id ? data.saved_id.replace(/^\d{4}-\d{2}\/\d{4}-\d{2}-\d{2} - /, "").replace(/\.txt$/, "") : data.title,
+    saved: data.saved_id ? "✓ Saved to your transcripts" : (data.save_error ? `Not saved: ${data.save_error}` : ""),
+    chips: [
+      data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`,
+      data.language && `Language: ${data.language}`,
+      fmtDuration(data.duration) && `Length ${fmtDuration(data.duration)}`,
+      `Took ${data.elapsed_seconds}s`,
+    ],
+  });
+}
+
+async function follow(id) {
+  jobId = id;
+  $("go").disabled = true;
+  $("cancel").disabled = false;
+  $("cancel").textContent = "Cancel";
+  try {
+    for (;;) {
+      const job = await api(`/api/jobs/${encodeURIComponent(id)}`);
+      showProgress(job);
+      if (job.status === "done") { showResult(job.result); $("url").value = ""; loadPage(true); break; }
+      if (job.status === "error") throw job.error;
+      if (job.status === "cancelled") { toast("Transcription cancelled"); break; }
+      await sleep(400);
+    }
+  } catch (err) {
+    showError(err);
+  } finally {
+    jobId = null;
+    $("progress").style.display = "none";
+    $("go").disabled = false;
+  }
+}
+
 async function transcribe(force) {
   const url = $("url").value.trim();
   if (!url) {
@@ -387,48 +452,36 @@ async function transcribe(force) {
                 hint: "On the video, tap Share → Copy link, then paste it in the box." });
     return;
   }
+  if (jobId) return;
   $("existing").style.display = "none";
   $("result").style.display = "none";
-  $("status").style.display = "flex";
   $("go").disabled = true;
-  const started = Date.now();
-  const timer = setInterval(() => {
-    $("status-text").textContent = `Working… ${Math.round((Date.now() - started) / 1000)}s (the first run downloads the model)`;
-  }, 1000);
   try {
-    const data = await api("/api/transcribe", {
+    const start = await api("/api/jobs", {
       method: "POST",
       body: JSON.stringify({ url, language: $("language").value || null, model: $("model").value,
                              use_captions: $("captions").checked, force }),
     });
-    if (data.existing) {
-      $("existing-text").textContent = `You already transcribed this video on ${data.existing.transcribed.slice(0, 10)}. Here it is.`;
+    if (start.existing) {
+      $("existing-text").textContent = `You already transcribed this video on ${start.existing.transcribed.slice(0, 10)}. Here it is.`;
       $("existing").style.display = "flex";
-      await openSaved(data.existing.id, true);
+      await openSaved(start.existing.id, true);
+      $("go").disabled = false;
       return;
     }
-    show({
-      id: data.saved_id, link: data.url, text: data.text, files: data.files,
-      title: data.saved_id ? data.saved_id.replace(/^\d{4}-\d{2}\/\d{4}-\d{2}-\d{2} - /, "").replace(/\.txt$/, "") : data.title,
-      saved: data.saved_id ? "✓ Saved to your transcripts" : (data.save_error ? `Not saved: ${data.save_error}` : ""),
-      chips: [
-        data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`,
-        data.language && `Language: ${data.language}`,
-        fmtDuration(data.duration) && `Length ${fmtDuration(data.duration)}`,
-        `Took ${data.elapsed_seconds}s`,
-      ],
-    });
-    $("url").value = "";
-    loadPage(true);
+    await follow(start.id);
   } catch (err) {
     showError(err);
-  } finally {
-    clearInterval(timer);
-    $("status").style.display = "none";
-    $("status-text").textContent = "Working…";
     $("go").disabled = false;
   }
 }
+
+$("cancel").addEventListener("click", async () => {
+  if (!jobId) return;
+  $("cancel").disabled = true;
+  $("cancel").textContent = "Cancelling…";
+  await api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }).catch(showError);
+});
 
 $("form").addEventListener("submit", (e) => { e.preventDefault(); transcribe(false); });
 $("again").addEventListener("click", () => transcribe(true));
@@ -482,6 +535,7 @@ api("/api/options").then(o => {
   $("max").textContent = o.max_minutes;
   $("save-dir").textContent = o.save_dir;
   englishOnly = o.english_only_models;
+  if (o.running_job) follow(o.running_job);  // e.g. after reloading the page
   for (const m of o.models) {
     const opt = new Option(MODEL_LABELS[m] || m, m);
     opt.selected = m === o.default_model;
