@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from video_transcriptor import core, web
 from video_transcriptor.models import Segment, Transcript
 
-client = TestClient(web.create_app(save_dir=Path(tempfile.mkdtemp())))
+client = TestClient(web.create_app(save_dir=Path(tempfile.mkdtemp())), base_url="http://127.0.0.1:8765")
 
 
 def test_index_and_options():
@@ -43,7 +43,7 @@ def test_input_validation():
 
 
 def test_transcripts_are_saved_and_listed(monkeypatch, tmp_path):
-    app_client = TestClient(web.create_app(save_dir=tmp_path))
+    app_client = TestClient(web.create_app(save_dir=tmp_path), base_url="http://127.0.0.1:8765")
 
     def fake(url, **kwargs):
         return Transcript([Segment(0, 1, "Saved text.")], "en", "captions", "My Video", url, 5)
@@ -56,3 +56,20 @@ def test_transcripts_are_saved_and_listed(monkeypatch, tmp_path):
     item = app_client.get(f"/api/history/{data['saved_file']}").json()
     assert item["text"] == "Saved text." and item["meta"]["link"] == "https://youtube.com/x"
     assert app_client.get("/api/history/..%2F..%2Fetc%2Fpasswd").status_code == 404
+
+
+def test_dns_rebinding_and_cross_site_requests_are_blocked():
+    assert client.get("/api/history", headers={"Host": "evil.example"}).status_code == 403
+    assert client.get("/api/history", headers={"Host": "127.0.0.1:8765"}).status_code == 200
+    assert client.get("/api/history", headers={"Host": "[::1]:8765"}).status_code == 200
+    res = client.post("/api/open-folder", json={}, headers={"Origin": "https://evil.example"})
+    assert res.status_code == 403
+    ok = client.get("/api/options", headers={"Origin": "http://127.0.0.1:8765"})
+    assert ok.status_code == 200
+
+
+def test_security_headers():
+    res = client.get("/")
+    assert "frame-ancestors 'none'" in res.headers["content-security-policy"]
+    assert res.headers["x-frame-options"] == "DENY"
+    assert client.get("/openapi.json").status_code == 404

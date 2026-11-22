@@ -8,13 +8,36 @@ import time
 from importlib.resources import files
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import asr, core, formats, storage
 
 log = logging.getLogger(__name__)
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+# Everything the page needs is inline; nothing may be loaded from elsewhere or embed this page.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; "
+        "frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+
+def _hostname(value: str) -> str:
+    """Host part of a Host header or Origin URL, without port or IPv6 brackets."""
+    netloc = urlparse(value).netloc if "://" in value else value
+    return (urlparse(f"//{netloc}").hostname or "").lower()
 
 
 class TranscribeRequest(BaseModel):
@@ -32,9 +55,30 @@ def create_app(
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
     save_dir: Path | None = None,
+    allowed_hosts: set[str] | None = None,
 ) -> FastAPI:
-    """`save_dir=None` saves into the `transcripts` folder inside the app folder."""
-    app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None)
+    """`save_dir=None` saves into the `transcripts` folder inside the app folder.
+
+    Only requests addressed to `allowed_hosts` (default: loopback names) are served. This
+    blocks DNS-rebinding attacks, where a malicious website points its own domain at
+    127.0.0.1 to read transcripts or start downloads that use the user's cookies.
+    Pass {"*"} to allow any host (only sensible on a trusted network).
+    """
+    app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None, openapi_url=None)
+    allowed = {h.lower() for h in (allowed_hosts or LOOPBACK_HOSTS)}
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        if "*" not in allowed:
+            if _hostname(request.headers.get("host", "")) not in allowed:
+                return JSONResponse({"detail": "Host not allowed."}, status_code=403)
+            # Browsers send Origin on cross-site requests; only our own page may call the API.
+            origin = request.headers.get("origin")
+            if origin and _hostname(origin) not in allowed:
+                return JSONResponse({"detail": "Cross-site request blocked."}, status_code=403)
+        response = await call_next(request)
+        response.headers.update(SECURITY_HEADERS)
+        return response
     save_dir = save_dir or storage.default_dir()
     index_html = files("video_transcriptor").joinpath("static/index.html").read_text("utf-8")
 
