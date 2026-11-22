@@ -97,3 +97,22 @@ def test_rejects_things_that_are_not_links_or_files():
         core.transcribe("not a link")
     with pytest.raises(core.TranscriptionError, match="Unknown model"):
         core.transcribe("https://x.com/v", model="gpt")
+
+
+def test_windows_firefox_profile_is_found_under_wsl(tmp_path, monkeypatch):
+    import os
+
+    monkeypatch.setattr(core.Path, "home", lambda: tmp_path / "home")
+    old = tmp_path / "Users/me/AppData/Roaming/Mozilla/Firefox/Profiles/old.default"
+    new = tmp_path / "Users/me/AppData/Roaming/Mozilla/Firefox/Profiles/new.default-release"
+    for i, profile in enumerate((old, new)):
+        profile.mkdir(parents=True)
+        (profile / "cookies.sqlite").write_bytes(b"")
+        os.utime(profile / "cookies.sqlite", (1000 + i, 1000 + i))
+    assert core._windows_firefox_profile(tmp_path / "Users") == str(new)
+    assert core._windows_firefox_profile(tmp_path / "nope") is None
+
+
+def test_cookie_options():
+    opts = core._ydl_options("chrome:Profile 1", None)
+    assert opts["cookiesfrombrowser"] == ("chrome", "Profile 1")

@@ -75,6 +75,8 @@ video-transcriptor serve --cookies-from-browser firefox
 # or export a cookies.txt file and use --cookies cookies.txt
 ```
 
+**WSL users:** `--cookies-from-browser firefox` automatically finds your *Windows* Firefox profile. Chrome and Edge on Windows encrypt their cookies so they can't be read from WSL, so use Firefox or a `cookies.txt` export instead.
+
 ## How it works
 
 1. Read the video's metadata and reject anything over 10 minutes.

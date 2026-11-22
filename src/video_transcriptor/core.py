@@ -52,11 +52,34 @@ def _ydl_options(cookies_from_browser: str | None, cookies_file: str | None, **e
                 opts["js_runtimes"] = {"deno": {"path": str(candidate)}}
                 break
     if cookies_from_browser:
-        opts["cookiesfrombrowser"] = (cookies_from_browser,)
+        browser, _, profile = cookies_from_browser.partition(":")
+        if browser.lower() == "firefox" and not profile:
+            profile = _windows_firefox_profile() or ""
+        opts["cookiesfrombrowser"] = (browser, profile or None)
     if cookies_file:
         opts["cookiefile"] = cookies_file
     opts.update(extra)
     return opts
+
+
+def _windows_firefox_profile(users_dir: Path = Path("/mnt/c/Users")) -> str | None:
+    """Under WSL, find the Windows Firefox profile so `--cookies-from-browser firefox` just works.
+
+    Only used when there is no Linux Firefox profile. Picks the profile whose cookies were
+    updated most recently. (Chrome/Edge cookies on Windows are encrypted and can't be read
+    from WSL.)
+    """
+    if (Path.home() / ".mozilla" / "firefox").is_dir() or not users_dir.is_dir():
+        return None
+    try:
+        cookie_dbs = list(users_dir.glob("*/AppData/Roaming/Mozilla/Firefox/Profiles/*/cookies.sqlite"))
+    except OSError:
+        return None
+    if not cookie_dbs:
+        return None
+    newest = max(cookie_dbs, key=lambda p: p.stat().st_mtime)
+    log.info("Using Windows Firefox profile %s", newest.parent)
+    return str(newest.parent)
 
 
 def _friendly_download_error(exc: Exception) -> TranscriptionError:
