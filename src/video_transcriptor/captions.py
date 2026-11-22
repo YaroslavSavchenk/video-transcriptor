@@ -25,15 +25,17 @@ def _match(tracks: dict, lang: str) -> str | None:
     return None
 
 
-def choose_track(info: dict, language: str | None = None) -> tuple[str, dict, bool] | None:
+def choose_track(info: dict, language: str | None = None,
+                 allow_auto: bool = False) -> tuple[str, dict, bool] | None:
     """Pick the caption track that matches the spoken language.
 
     Returns (language, format entry, is_automatic) or None when no suitable track exists.
-    YouTube auto-captions are offered in many machine-translated languages, so only the
-    original-language track is acceptable.
+    By default only captions made by the uploader are used: the platform's automatic
+    captions have little or no punctuation, and Whisper does better. With `allow_auto`,
+    only the original-language auto track is acceptable (the others are machine-translated).
     """
-    manual = info.get("subtitles") or {}
-    auto = info.get("automatic_captions") or {}
+    manual = {k: v for k, v in (info.get("subtitles") or {}).items() if k != "live_chat"}
+    auto = (info.get("automatic_captions") or {}) if allow_auto else {}
     lang = language or info.get("language")
 
     candidates: list[tuple[str, dict, bool]] = []

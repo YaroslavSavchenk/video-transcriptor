@@ -164,6 +164,7 @@ def _transcribe_url(
     language: str | None,
     model: str,
     use_captions: bool,
+    use_auto_captions: bool,
     device: str,
     cookies_from_browser: str | None,
     cookies_file: str | None,
@@ -207,9 +208,18 @@ def _transcribe_url(
             _check_duration(duration)
             title = info.get("title")
 
+            # The English-only model turns other languages into nonsense. YouTube often tells us
+            # the spoken language; if it isn't English, switch to the multilingual model.
+            switched_from = None
+            video_lang = (info.get("language") or "").split("-")[0].lower()
+            if model in asr.ENGLISH_ONLY_MODELS and video_lang and video_lang != "en" \
+                    and re.fullmatch(r"[a-z]{2,3}", video_lang):
+                switched_from, model, language = model, asr.DEFAULT_MULTILINGUAL_MODEL, video_lang
+                log.info("Video is in %r: using %s instead of %s", video_lang, model, switched_from)
+
             if use_captions:
                 control.stage("Looking for captions…")
-                transcript = _try_captions(ydl, info, language)
+                transcript = _try_captions(ydl, info, language, use_auto_captions)
                 if transcript:
                     transcript.title, transcript.url, transcript.duration = title, url, duration
                     transcript.extra.update(_video_meta(info))
@@ -238,7 +248,8 @@ def _transcribe_url(
             shutil.copy2(files[0], keep_media_dir)
         return Transcript(
             segments, detected, "speech-recognition", title, url, duration or audio_duration,
-            extra={"model": model, **_video_meta(info)},
+            extra={"model": model, **_video_meta(info),
+                   **({"switched_from_model": switched_from} if switched_from else {})},
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -254,8 +265,8 @@ def _video_meta(info: dict) -> dict:
     }
 
 
-def _try_captions(ydl, info: dict, language: str | None) -> Transcript | None:
-    track = captions.choose_track(info, language)
+def _try_captions(ydl, info: dict, language: str | None, allow_auto: bool) -> Transcript | None:
+    track = captions.choose_track(info, language, allow_auto)
     if not track:
         return None
     lang, fmt, is_auto = track
@@ -306,6 +317,7 @@ def transcribe(
     language: str | None = None,
     model: str | None = None,
     use_captions: bool = True,
+    use_auto_captions: bool = False,
     device: str = "auto",
     cookies_from_browser: str | None = None,
     cookies_file: str | None = None,
@@ -340,6 +352,7 @@ def transcribe(
             language=language,
             model=model,
             use_captions=use_captions,
+            use_auto_captions=use_auto_captions,
             device=device,
             cookies_from_browser=cookies_from_browser,
             cookies_file=cookies_file,

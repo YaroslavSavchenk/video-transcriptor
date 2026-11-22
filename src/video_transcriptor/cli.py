@@ -38,7 +38,9 @@ def build_parser() -> argparse.ArgumentParser:
                          f"{asr.DEFAULT_MULTILINGUAL_MODEL} for other languages)")
     tr.add_argument("-o", "--output", help="write to this file instead of the terminal")
     tr.add_argument("--no-captions", action="store_true",
-                    help="always use speech recognition, even if the platform has captions")
+                    help="always use speech recognition, even if the uploader added captions")
+    tr.add_argument("--auto-captions", action="store_true",
+                    help="also accept the platform's automatic captions (fast, but little punctuation)")
     tr.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     tr.add_argument("--keep-media", metavar="DIR", help="(debug) keep a copy of the fetched audio in DIR")
     _add_cookie_args(tr)
@@ -74,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         t = transcribe(
             args.source, language=args.lang, model=args.model, use_captions=not args.no_captions,
+            use_auto_captions=args.auto_captions,
             device=args.device, cookies_from_browser=args.cookies_from_browser,
             cookies_file=args.cookies, keep_media_dir=args.keep_media,
         )

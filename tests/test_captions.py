@@ -50,7 +50,8 @@ def _fmt(ext):
 def test_choose_track_prefers_original_auto_caption_over_translations():
     info = {"language": None, "subtitles": {},
             "automatic_captions": {"de": [_fmt("vtt")], "en-orig": [_fmt("vtt"), _fmt("json3")], "en": [_fmt("vtt")]}}
-    lang, fmt, is_auto = captions.choose_track(info)
+    assert captions.choose_track(info) is None  # automatic captions are skipped by default
+    lang, fmt, is_auto = captions.choose_track(info, allow_auto=True)
     assert (lang, fmt["ext"], is_auto) == ("en", "json3", True)
 
 
@@ -58,6 +59,7 @@ def test_choose_track_prefers_manual_subtitles_in_requested_language():
     info = {"subtitles": {"en": [_fmt("vtt")], "de": [_fmt("vtt")]},
             "automatic_captions": {"en-orig": [_fmt("json3")]}}
     assert captions.choose_track(info, "en")[2] is False
+    assert captions.choose_track({"subtitles": {"live_chat": [_fmt("json3")]}}) is None
 
 
 def test_choose_track_skips_ambiguous_or_missing_tracks():
