@@ -33,7 +33,7 @@ def create_app(
     cookies_file: str | None = None,
     save_dir: Path | None = None,
 ) -> FastAPI:
-    """`save_dir=None` uses the default Transcripts folder (Windows Documents under WSL)."""
+    """`save_dir=None` saves into the `transcripts` folder inside the app folder."""
     app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None)
     save_dir = save_dir or storage.default_dir()
     index_html = files("video_transcriptor").joinpath("static/index.html").read_text("utf-8")

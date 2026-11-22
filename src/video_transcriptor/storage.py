@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 
 from .models import Transcript
@@ -19,27 +18,16 @@ def is_wsl() -> bool:
     return "microsoft" in os.uname().release.lower() if hasattr(os, "uname") else False
 
 
-@lru_cache(maxsize=1)
-def _windows_documents() -> Path | None:
-    """The Windows 'Documents' folder as a WSL path, so files are easy to find in Explorer."""
-    try:
-        out = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", "[Environment]::GetFolderPath('MyDocuments')"],
-            capture_output=True, text=True, timeout=15,
-        ).stdout.strip()
-        if out:
-            path = Path(subprocess.run(["wslpath", "-u", out], capture_output=True, text=True,
-                                       timeout=5).stdout.strip())
-            if path.is_dir():
-                return path
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
-
-
 def default_dir() -> Path:
-    docs = _windows_documents() if is_wsl() else None
-    return (docs or Path.home() / "Documents") / "Transcripts"
+    """Transcripts live with the app: `<project folder>/transcripts`.
+
+    When installed as a regular package (no project folder), fall back to the user's data folder.
+    """
+    project = Path(__file__).resolve().parents[2]
+    if (project / "pyproject.toml").is_file():
+        return project / "transcripts"
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return data_home / "video-transcriptor" / "transcripts"
 
 
 def video_name(t: Transcript) -> str:
@@ -112,7 +100,7 @@ def read_saved(directory: Path, filename: str) -> dict:
 
 def display_path(path: Path) -> str:
     """Show WSL paths the way Windows users know them (C:\\Users\\...)."""
-    if is_wsl() and str(path).startswith("/mnt/"):
+    if is_wsl():
         try:
             return subprocess.run(["wslpath", "-w", str(path)], capture_output=True, text=True,
                                   timeout=5).stdout.strip() or str(path)
