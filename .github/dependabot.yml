@@ -7,6 +7,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # faster-whisper 1.2 uses av.open(metadata_errors=...), removed in PyAV 19.
+      # Remove this rule once faster-whisper supports newer PyAV.
+      - dependency-name: "av"
+        versions: [">=19"]
     groups:
       python-dependencies:
         patterns: ["*"]
