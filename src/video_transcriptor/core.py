@@ -10,13 +10,14 @@ Flow for a URL:
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from . import asr, captions
+from . import asr, captions, links, sandbox
 from .errors import TranscriptionError, classify_download_error
 from .models import Segment, Transcript
 
@@ -41,7 +42,11 @@ def _check_duration(duration: float | None) -> None:
 
 
 def _ydl_options(cookies_from_browser: str | None, cookies_file: str | None, **extra) -> dict:
-    opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True}
+    opts = {
+        "quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True,
+        # Only the YouTube/Instagram/TikTok extractors: no generic "any website" downloader.
+        "allowed_extractors": links.ALLOWED_EXTRACTORS,
+    }
     # YouTube needs a JavaScript runtime. The `deno` dependency installs one next to Python,
     # which isn't on PATH unless the virtualenv is activated.
     if not shutil.which("deno"):
@@ -82,8 +87,13 @@ def _windows_firefox_profile(users_dir: Path = Path("/mnt/c/Users")) -> str | No
 
 
 def _first_entry(info: dict) -> dict:
+    """A single video. Instagram posts with several clips count as one (first clip)."""
     if info.get("_type") == "playlist":
-        entries = [e for e in info.get("entries") or [] if e]
+        if info.get("extractor_key") != "Instagram":
+            raise TranscriptionError("This link points to a playlist or channel, not to a single video.",
+                                     kind="link", title="That's not a video",
+                                     hint="Open the video itself, then use Share → Copy link.")
+        entries = [e for e in info.get("entries") or [] if e and e.get("_type", "video") == "video"]
         if not entries:
             raise TranscriptionError("There's no video at this link.", kind="link",
                                      title="No video found", hint="Open the video itself and copy its link.")
@@ -119,6 +129,11 @@ def _transcribe_url(
             except yt_dlp.utils.DownloadError as exc:
                 raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
+            if info.get("live_status") in ("is_live", "is_upcoming"):
+                raise TranscriptionError(
+                    "Live streams and premieres can't be transcribed while they're live.",
+                    kind="video", title="Live stream",
+                    hint="Wait until the recording is published, then try again.")
             duration = info.get("duration")
             _check_duration(duration)
             title = info.get("title")
@@ -140,16 +155,10 @@ def _transcribe_url(
             raise TranscriptionError("The video was found, but its audio couldn't be downloaded.",
                                      kind="platform", title="Couldn't download the audio",
                                      hint="Try again in a minute. If it keeps failing, update the app.")
-        if not _has_audio(files[0]):
-            raise TranscriptionError(
-                "The video has no sound track. Either it's silent, or the platform only gave the "
-                "audio to logged-in users (this happens on Instagram).",
-                kind="video", title="No sound in this video",
-                hint="Check in your browser that the video has sound. If it does, log in to the "
-                     "platform in Firefox and try again.",
-            )
-        segments, detected, audio_duration = _run_asr(files[0], model, language, device)
-        _check_duration(audio_duration)
+        # Decode in an isolated, resource-limited process: the file comes from the internet.
+        audio = sandbox.decode_audio(files[0], MAX_DURATION_SECONDS)
+        _check_duration(len(audio) / sandbox.SAMPLE_RATE)
+        segments, detected, audio_duration = _run_asr(audio, model, language, device)
         if keep_media_dir:
             Path(keep_media_dir).mkdir(parents=True, exist_ok=True)
             shutil.copy2(files[0], keep_media_dir)
@@ -171,16 +180,6 @@ def _video_meta(info: dict) -> dict:
     }
 
 
-def _has_audio(path: Path) -> bool:
-    import av
-
-    try:
-        with av.open(str(path)) as container:
-            return any(s.type == "audio" for s in container.streams)
-    except Exception:
-        return True  # let the transcriber report the real problem
-
-
 def _try_captions(ydl, info: dict, language: str | None) -> Transcript | None:
     track = captions.choose_track(info, language)
     if not track:
@@ -197,9 +196,9 @@ def _try_captions(ydl, info: dict, language: str | None) -> Transcript | None:
     return Transcript(segments, lang, "captions", extra={"automatic_captions": is_auto})
 
 
-def _run_asr(path: Path, model: str, language: str | None, device: str):
+def _run_asr(audio, model: str, language: str | None, device: str):
     try:
-        return asr.transcribe_file(path, model, language, device)
+        return asr.transcribe_file(audio, model, language, device)
     except Exception as exc:
         log.exception("Speech recognition failed")
         raise TranscriptionError(
@@ -211,18 +210,13 @@ def _run_asr(path: Path, model: str, language: str | None, device: str):
 
 
 def _transcribe_local(path: Path, *, language: str | None, model: str, device: str) -> Transcript:
+    tmpdir = Path(tempfile.mkdtemp(prefix="video-transcriptor-"))
     try:
-        import av
-
-        with av.open(str(path)) as container:
-            if container.duration:
-                _check_duration(container.duration / av.time_base)
-    except TranscriptionError:
-        raise
-    except Exception as exc:
-        raise TranscriptionError("This file can't be read as audio or video.", kind="link",
-                                 title="Unreadable file", technical=str(exc)) from exc
-    segments, detected, duration = _run_asr(path, model, language, device)
+        audio = sandbox.decode_audio(path, MAX_DURATION_SECONDS, workdir=tmpdir)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    _check_duration(len(audio) / sandbox.SAMPLE_RATE)
+    segments, detected, duration = _run_asr(audio, model, language, device)
     return Transcript(segments, detected, "speech-recognition", path.name, None, duration, extra={"model": model})
 
 
@@ -255,9 +249,9 @@ def transcribe(
             )
         language = "en"
 
-    if _is_url(source):
+    if _is_url(source) or re.match(r"^(www\.|m\.)?(youtube\.com|youtu\.be|instagram\.com|(vm\.|vt\.)?tiktok\.com)/", source, re.I):
         return _transcribe_url(
-            source,
+            links.clean_link(source),
             language=language,
             model=model,
             use_captions=use_captions,

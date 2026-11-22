@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import asr, core, formats, storage
+from . import asr, core, formats, links, storage
 from .errors import TranscriptionError
 
 log = logging.getLogger(__name__)
@@ -114,13 +114,10 @@ def create_app(
     # A plain `def` endpoint runs in FastAPI's thread pool, so the server stays responsive.
     @app.post("/api/transcribe")
     def transcribe(req: TranscribeRequest) -> dict:
-        url = req.url.strip()
-        if not url:
-            raise _user_error("link", "No link", "Paste a link to a video first.")
-        if not core._is_url(url):
-            raise _user_error("link", "That's not a web link",
-                              "A video link starts with https:// (for example https://www.instagram.com/reel/…).",
-                              "Use the Share button on the video, choose “Copy link” and paste it here.")
+        try:
+            url = links.clean_link(req.url)
+        except TranscriptionError as exc:
+            raise HTTPException(400, exc.to_dict()) from exc
         language = (req.language or "").strip().lower() or None
         if language and not re.fullmatch(r"[a-z]{2,3}", language):
             raise _user_error("settings", "Unknown language", "Choose a language from the list.")
