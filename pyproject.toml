@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
-    "yt-dlp[default]>=2025.11.12",
+    "yt-dlp[default,curl-cffi]>=2025.11.12",  # curl-cffi: TikTok needs browser impersonation
     "deno>=2.0",  # JavaScript runtime that yt-dlp needs for YouTube
     "faster-whisper>=1.1",
     "av<19",  # faster-whisper 1.2 uses av.open(metadata_errors=...), removed in PyAV 19

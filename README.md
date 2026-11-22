@@ -100,7 +100,7 @@ video-transcriptor serve --cookies-from-browser firefox
 ## Known limitations
 
 - Platforms change often and can break downloading. Keep yt-dlp up to date with `uv pip install -U yt-dlp`.
-- Some TikTok links currently fail inside yt-dlp ("Unexpected response from webpage request"). Updating yt-dlp usually fixes this.
+- A few individual TikTok posts are blocked for downloading from some networks ("IP address is blocked"); the app says so clearly.
 - YouTube's automatic captions have no or weak punctuation. To get Whisper's output instead, untick "Use platform captions" or pass `--no-captions`.
 
 ## Development
