@@ -10,7 +10,7 @@ from pathlib import Path
 
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -45,10 +45,15 @@ class TranscribeRequest(BaseModel):
     language: str | None = Field(default=None, max_length=10)
     model: str | None = None
     use_captions: bool = True
+    force: bool = False  # transcribe again even if this video is already in the library
 
 
 class OpenRequest(BaseModel):
-    file: str | None = None
+    id: str | None = Field(default=None, max_length=300)
+
+
+class IdRequest(BaseModel):
+    id: str = Field(max_length=300)
 
 
 def create_app(
@@ -79,7 +84,9 @@ def create_app(
         response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
         return response
+
     save_dir = save_dir or storage.default_dir()
+    library = storage.Library(save_dir)
     index_html = files("video_transcriptor").joinpath("static/index.html").read_text("utf-8")
 
     @app.get("/", response_class=HTMLResponse)
@@ -103,6 +110,8 @@ def create_app(
             raise HTTPException(400, "Language must be a code like 'nl' or 'en'.")
         if req.model is not None and req.model not in asr.MODELS:
             raise HTTPException(400, f"Unknown model; choose from {', '.join(asr.MODELS)}.")
+        if not req.force and (existing := library.find_by_url(url)):
+            return {"existing": existing}
 
         started = time.monotonic()
         try:
@@ -120,29 +129,48 @@ def create_app(
         result["elapsed_seconds"] = round(time.monotonic() - started, 1)
         result["files"] = {fmt: formats.render(t, fmt) for fmt in ("txt", "srt", "vtt")}
         try:
-            saved = storage.save(t, save_dir)
-            result["saved_file"] = saved.name
+            result["saved_id"] = library.save(t)
         except OSError as exc:
             log.exception("Could not save transcript")
             result["save_error"] = str(exc)
         return result
 
-    @app.get("/api/history")
-    def history() -> list[dict]:
-        return storage.list_saved(save_dir)
+    @app.get("/api/transcripts")
+    def transcripts(q: str = Query("", max_length=200), offset: int = Query(0, ge=0),
+                    limit: int = Query(50, ge=1, le=200)) -> dict:
+        return library.query(q, offset, limit)
 
-    @app.get("/api/history/{filename}")
-    def history_item(filename: str) -> dict:
+    @app.get("/api/transcript")
+    def transcript(id: str = Query(max_length=300)) -> dict:
         try:
-            return storage.read_saved(save_dir, filename)
+            return library.get(id)
         except (FileNotFoundError, OSError) as exc:
             raise HTTPException(404, "Transcript not found.") from exc
+
+    @app.delete("/api/transcript")
+    def delete_transcript(id: str = Query(max_length=300)) -> dict:
+        try:
+            library.delete(id)
+        except (FileNotFoundError, OSError) as exc:
+            raise HTTPException(404, "Transcript not found.") from exc
+        return {"ok": True}
+
+    @app.post("/api/transcript/restore")
+    def restore_transcript(req: IdRequest) -> dict:
+        try:
+            return {"id": library.restore(req.id)}
+        except (FileNotFoundError, OSError) as exc:
+            raise HTTPException(404, "Nothing to restore.") from exc
 
     @app.post("/api/open-folder")
     def open_folder(req: OpenRequest) -> dict:
         target = save_dir
-        if req.file and Path(req.file).name == req.file and (save_dir / req.file).is_file():
-            target = save_dir / req.file
+        if req.id:
+            try:
+                path = library._path(req.id)
+                target = path if path.is_file() else save_dir
+            except FileNotFoundError:
+                pass
         save_dir.mkdir(parents=True, exist_ok=True)
         storage.open_in_file_manager(target)
         return {"ok": True}
