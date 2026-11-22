@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Transcriptor</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --text: #1c1b19; --muted: #6b6860; --border: #e3e0d8;
+    --accent: #2f5bd3; --accent-text: #ffffff; --error-bg: #fdecea; --error: #a3261b;
+    --chip: #eef1fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --panel: #1f1e1c; --text: #ecebe7; --muted: #9c998f; --border: #34322e;
+      --accent: #7c9cff; --accent-text: #0d1020; --error-bg: #3a1d1a; --error: #ffb4a9;
+      --chip: #262b3b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); margin: 0 0 28px; }
+  form { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .row { display: flex; gap: 10px; }
+  input[type=url] {
+    flex: 1; min-width: 0; font: inherit; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  input[type=url]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer;
+    background: var(--accent); color: var(--accent-text);
+  }
+  button:disabled { opacity: .55; cursor: progress; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); font-weight: 500; padding: 8px 12px; }
+  .options { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; color: var(--muted); font-size: .9rem; align-items: center; }
+  .options label { display: flex; gap: 6px; align-items: center; }
+  select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .status { margin-top: 20px; color: var(--muted); display: none; align-items: center; gap: 10px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { margin-top: 20px; padding: 14px 16px; border-radius: 10px; background: var(--error-bg); color: var(--error); white-space: pre-wrap; display: none; }
+  .result { margin-top: 24px; display: none; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .meta h2 { font-size: 1.05rem; margin: 0 8px 0 0; flex-basis: 100%; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+  textarea {
+    width: 100%; min-height: 280px; resize: vertical; font: inherit; line-height: 1.6; padding: 14px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: .8rem; }
+  @media (max-width: 520px) { .row { flex-direction: column; } main { padding-top: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Video Transcriptor</h1>
+  <p class="lead">Paste a link to an Instagram Reel, YouTube Short or TikTok. Up to <span id="max">10</span> minutes.</p>
+
+  <form id="form">
+    <div class="row">
+      <input id="url" type="url" required placeholder="https://www.instagram.com/reel/…" autocomplete="off" autofocus>
+      <button id="go" type="submit">Transcribe</button>
+    </div>
+    <div class="options">
+      <label>Language
+        <select id="language">
+          <option value="en" selected>English</option>
+          <option value="">Auto-detect</option>
+          <option value="nl">Dutch</option>
+          <option value="de">German</option>
+          <option value="fr">French</option>
+          <option value="es">Spanish</option>
+          <option value="uk">Ukrainian</option>
+          <option value="ru">Russian</option>
+        </select>
+      </label>
+      <label>Model
+        <select id="model"></select>
+      </label>
+      <label><input id="captions" type="checkbox" checked> Use platform captions when available</label>
+    </div>
+  </form>
+
+  <div class="status" id="status"><div class="spinner"></div><span id="status-text">Working…</span></div>
+  <div class="error" id="error" role="alert"></div>
+
+  <section class="result" id="result">
+    <div class="meta" id="meta"></div>
+    <textarea id="text" readonly></textarea>
+    <div class="actions">
+      <button class="ghost" id="copy" type="button">Copy</button>
+      <button class="ghost" data-fmt="txt" type="button">Download .txt</button>
+      <button class="ghost" data-fmt="srt" type="button">Download .srt</button>
+      <button class="ghost" data-fmt="vtt" type="button">Download .vtt</button>
+    </div>
+  </section>
+
+  <footer>Runs on your own computer. Audio is fetched temporarily and deleted right after transcribing.</footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const MODEL_LABELS = {
+  "small.en": "small.en · English, fast",
+  "distil-large-v3": "distil-large-v3 · English, best",
+  "tiny": "tiny · any language, fastest",
+  "base": "base · any language",
+  "small": "small · any language, fast",
+  "medium": "medium · any language",
+  "large-v3-turbo": "large-v3-turbo · any language, best",
+  "large-v3": "large-v3 · any language, slow",
+};
+let englishOnly = [];
+// English-only models can't do other languages: switch to a multilingual model when needed.
+function syncModel() {
+  const lang = $("language").value;
+  if (lang !== "en" && englishOnly.includes($("model").value)) $("model").value = "large-v3-turbo";
+}
+$("language").addEventListener("change", syncModel);
+$("model").addEventListener("change", () => { if (englishOnly.includes($("model").value)) $("language").value = "en"; });
+let last = null;
+
+fetch("/api/options").then(r => r.json()).then(o => {
+  $("max").textContent = o.max_minutes;
+  englishOnly = o.english_only_models;
+  for (const m of o.models) {
+    const opt = new Option(MODEL_LABELS[m] || m, m);
+    opt.selected = m === o.default_model;
+    $("model").add(opt);
+  }
+});
+
+function chip(text) { const s = document.createElement("span"); s.className = "chip"; s.textContent = text; return s; }
+function fmtDuration(s) { if (!s) return null; s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("error").style.display = "none";
+  $("result").style.display = "none";
+  $("status").style.display = "flex";
+  $("go").disabled = true;
+  const started = Date.now();
+  const timer = setInterval(() => {
+    $("status-text").textContent = `Working… ${Math.round((Date.now() - started) / 1000)}s (the first run downloads the model)`;
+  }, 1000);
+  try {
+    const res = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: $("url").value, language: $("language").value || null,
+        model: $("model").value, use_captions: $("captions").checked,
+      }),
+    });
+    const data = await res.json().catch(() => ({ detail: `Server error (${res.status})` }));
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Invalid request.");
+    last = data;
+    const meta = $("meta");
+    meta.replaceChildren();
+    const h = document.createElement("h2"); h.textContent = data.title || "Transcript"; meta.append(h);
+    meta.append(chip(data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`));
+    if (data.language) meta.append(chip(`Language: ${data.language}`));
+    const d = fmtDuration(data.duration); if (d) meta.append(chip(`Length ${d}`));
+    meta.append(chip(`Took ${data.elapsed_seconds}s`));
+    $("text").value = data.text || "(No speech found.)";
+    $("result").style.display = "block";
+  } catch (err) {
+    $("error").textContent = err.message;
+    $("error").style.display = "block";
+  } finally {
+    clearInterval(timer);
+    $("status").style.display = "none";
+    $("status-text").textContent = "Working…";
+    $("go").disabled = false;
+  }
+});
+
+$("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("text").value);
+  $("copy").textContent = "Copied ✓";
+  setTimeout(() => ($("copy").textContent = "Copy"), 1500);
+});
+
+document.querySelectorAll("[data-fmt]").forEach(btn => btn.addEventListener("click", () => {
+  if (!last) return;
+  const fmt = btn.dataset.fmt;
+  const name = (last.title || "transcript").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "transcript";
+  const blob = new Blob([last.files[fmt]], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `${name}.${fmt}`; a.click();
+  URL.revokeObjectURL(a.href);
+}));
+</script>
+</body>
+</html>
