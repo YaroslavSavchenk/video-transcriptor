@@ -11,10 +11,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from . import asr, core, formats, storage
+from .errors import TranscriptionError
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +40,10 @@ def _hostname(value: str) -> str:
     """Host part of a Host header or Origin URL, without port or IPv6 brackets."""
     netloc = urlparse(value).netloc if "://" in value else value
     return (urlparse(f"//{netloc}").hostname or "").lower()
+
+
+def _user_error(kind: str, title: str, message: str, hint: str | None = None) -> HTTPException:
+    return HTTPException(400, TranscriptionError(message, kind=kind, title=title, hint=hint).to_dict())
 
 
 class TranscribeRequest(BaseModel):
@@ -70,6 +76,12 @@ def create_app(
     Pass {"*"} to allow any host (only sensible on a trusted network).
     """
     app = FastAPI(title="video-transcriptor", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError):
+        return JSONResponse({"detail": TranscriptionError(
+            "The request wasn't valid. If you pasted something very long, check that it's a single "
+            "video link.", kind="link", title="Invalid input").to_dict()}, status_code=400)
     allowed = {h.lower() for h in (allowed_hosts or LOOPBACK_HOSTS)}
 
     @app.middleware("http")
@@ -103,13 +115,17 @@ def create_app(
     @app.post("/api/transcribe")
     def transcribe(req: TranscribeRequest) -> dict:
         url = req.url.strip()
+        if not url:
+            raise _user_error("link", "No link", "Paste a link to a video first.")
         if not core._is_url(url):
-            raise HTTPException(400, "Paste a full link that starts with http:// or https://.")
+            raise _user_error("link", "That's not a web link",
+                              "A video link starts with https:// (for example https://www.instagram.com/reel/…).",
+                              "Use the Share button on the video, choose “Copy link” and paste it here.")
         language = (req.language or "").strip().lower() or None
         if language and not re.fullmatch(r"[a-z]{2,3}", language):
-            raise HTTPException(400, "Language must be a code like 'nl' or 'en'.")
+            raise _user_error("settings", "Unknown language", "Choose a language from the list.")
         if req.model is not None and req.model not in asr.MODELS:
-            raise HTTPException(400, f"Unknown model; choose from {', '.join(asr.MODELS)}.")
+            raise _user_error("settings", "Unknown model", "Choose a model from the list.")
         if not req.force and (existing := library.find_by_url(url)):
             return {"existing": existing}
 
@@ -119,11 +135,15 @@ def create_app(
                 url, language=language, model=req.model, use_captions=req.use_captions,
                 cookies_from_browser=cookies_from_browser, cookies_file=cookies_file,
             )
-        except core.TranscriptionError as exc:
-            raise HTTPException(422, str(exc)) from exc
+        except TranscriptionError as exc:
+            raise HTTPException(422, exc.to_dict()) from exc
         except Exception as exc:
             log.exception("Transcription failed")
-            raise HTTPException(500, f"Something went wrong: {exc}") from exc
+            raise HTTPException(500, TranscriptionError(
+                "An unexpected error happened inside the app.", kind="app",
+                title="Something went wrong in the app",
+                hint="Try again. If it keeps happening, restart the app or update it.",
+                technical=f"{type(exc).__name__}: {exc}").to_dict()) from exc
 
         result = t.to_dict()
         result["elapsed_seconds"] = round(time.monotonic() - started, 1)

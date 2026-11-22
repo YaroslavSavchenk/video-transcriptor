@@ -93,9 +93,9 @@ def test_english_only_model_rejects_other_language():
 
 
 def test_rejects_things_that_are_not_links_or_files():
-    with pytest.raises(core.TranscriptionError, match="not a link"):
+    with pytest.raises(core.TranscriptionError, match="not a web link"):
         core.transcribe("not a link")
-    with pytest.raises(core.TranscriptionError, match="Unknown model"):
+    with pytest.raises(core.TranscriptionError, match="no model called"):
         core.transcribe("https://x.com/v", model="gpt")
 
 

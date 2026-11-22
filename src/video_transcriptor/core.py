@@ -17,16 +17,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from . import asr, captions
+from .errors import TranscriptionError, classify_download_error
 from .models import Segment, Transcript
 
 log = logging.getLogger(__name__)
 
 MAX_DURATION_SECONDS = 10 * 60
 MAX_FILESIZE_BYTES = 500 * 1024 * 1024
-
-
-class TranscriptionError(Exception):
-    """An error with a message that is safe and useful to show to the user."""
 
 
 def _is_url(source: str) -> bool:
@@ -36,8 +33,10 @@ def _is_url(source: str) -> bool:
 def _check_duration(duration: float | None) -> None:
     if duration and duration > MAX_DURATION_SECONDS:
         raise TranscriptionError(
-            f"This video is {duration / 60:.1f} minutes long; the limit is "
-            f"{MAX_DURATION_SECONDS // 60} minutes."
+            f"This video is {duration / 60:.1f} minutes long. The limit is "
+            f"{MAX_DURATION_SECONDS // 60} minutes.",
+            kind="video", title="Video too long",
+            hint="Pick a shorter video (Reels, Shorts and TikToks are usually well under the limit).",
         )
 
 
@@ -82,24 +81,12 @@ def _windows_firefox_profile(users_dir: Path = Path("/mnt/c/Users")) -> str | No
     return str(newest.parent)
 
 
-def _friendly_download_error(exc: Exception) -> TranscriptionError:
-    msg = str(exc).removeprefix("ERROR: ")
-    lower = msg.lower()
-    if any(w in lower for w in ("login", "log in", "cookies", "private", "rate-limit")):
-        msg += (
-            "\n\nThis platform wants a logged-in session for this video. Start the tool with "
-            "--cookies-from-browser firefox (or --cookies cookies.txt) and try again."
-        )
-    elif "unsupported url" in lower:
-        msg = "This link isn't supported. Use a link to an Instagram Reel, YouTube video/Short or TikTok."
-    return TranscriptionError(msg)
-
-
 def _first_entry(info: dict) -> dict:
     if info.get("_type") == "playlist":
         entries = [e for e in info.get("entries") or [] if e]
         if not entries:
-            raise TranscriptionError("No video found at this link.")
+            raise TranscriptionError("There's no video at this link.", kind="link",
+                                     title="No video found", hint="Open the video itself and copy its link.")
         return entries[0]
     return info
 
@@ -130,7 +117,7 @@ def _transcribe_url(
             try:
                 info = _first_entry(ydl.extract_info(url, download=False))
             except yt_dlp.utils.DownloadError as exc:
-                raise _friendly_download_error(exc) from exc
+                raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
             duration = info.get("duration")
             _check_duration(duration)
@@ -146,18 +133,22 @@ def _transcribe_url(
             try:
                 ydl.process_ie_result(info, download=True)
             except yt_dlp.utils.DownloadError as exc:
-                raise _friendly_download_error(exc) from exc
+                raise classify_download_error(exc, url, bool(cookies_from_browser or cookies_file)) from exc
 
         files = [p for p in tmpdir.iterdir() if p.is_file() and not p.name.endswith(".part")]
         if not files:
-            raise TranscriptionError("Couldn't fetch the audio of this video.")
+            raise TranscriptionError("The video was found, but its audio couldn't be downloaded.",
+                                     kind="platform", title="Couldn't download the audio",
+                                     hint="Try again in a minute. If it keeps failing, update the app.")
         if not _has_audio(files[0]):
             raise TranscriptionError(
-                "The fetched video has no sound track. Either the video is silent, or the platform "
-                "only serves the audio to logged-in users (common on Instagram): start the tool with "
-                "--cookies-from-browser firefox and try again."
+                "The video has no sound track. Either it's silent, or the platform only gave the "
+                "audio to logged-in users (this happens on Instagram).",
+                kind="video", title="No sound in this video",
+                hint="Check in your browser that the video has sound. If it does, log in to the "
+                     "platform in Firefox and try again.",
             )
-        segments, detected, audio_duration = asr.transcribe_file(files[0], model, language, device)
+        segments, detected, audio_duration = _run_asr(files[0], model, language, device)
         _check_duration(audio_duration)
         if keep_media_dir:
             Path(keep_media_dir).mkdir(parents=True, exist_ok=True)
@@ -206,6 +197,19 @@ def _try_captions(ydl, info: dict, language: str | None) -> Transcript | None:
     return Transcript(segments, lang, "captions", extra={"automatic_captions": is_auto})
 
 
+def _run_asr(path: Path, model: str, language: str | None, device: str):
+    try:
+        return asr.transcribe_file(path, model, language, device)
+    except Exception as exc:
+        log.exception("Speech recognition failed")
+        raise TranscriptionError(
+            "The speech recognition step crashed while processing the audio.",
+            kind="app", title="Speech recognition failed",
+            hint="Try again. If it keeps happening, try another model or restart the app.",
+            technical=f"{type(exc).__name__}: {exc}",
+        ) from exc
+
+
 def _transcribe_local(path: Path, *, language: str | None, model: str, device: str) -> Transcript:
     try:
         import av
@@ -216,8 +220,9 @@ def _transcribe_local(path: Path, *, language: str | None, model: str, device: s
     except TranscriptionError:
         raise
     except Exception as exc:
-        raise TranscriptionError(f"Can't read this file as audio or video: {exc}") from exc
-    segments, detected, duration = asr.transcribe_file(path, model, language, device)
+        raise TranscriptionError("This file can't be read as audio or video.", kind="link",
+                                 title="Unreadable file", technical=str(exc)) from exc
+    segments, detected, duration = _run_asr(path, model, language, device)
     return Transcript(segments, detected, "speech-recognition", path.name, None, duration, extra={"model": model})
 
 
@@ -239,12 +244,14 @@ def transcribe(
         # English is the main use case; other languages get the best multilingual model.
         model = asr.DEFAULT_MODEL if language in (None, "en") else asr.DEFAULT_MULTILINGUAL_MODEL
     if model not in asr.MODELS:
-        raise TranscriptionError(f"Unknown model {model!r}; choose from {', '.join(asr.MODELS)}.")
+        raise TranscriptionError(f"There's no model called {model!r}.", kind="settings",
+                                 title="Unknown model", hint=f"Choose one of: {', '.join(asr.MODELS)}.")
     if model in asr.ENGLISH_ONLY_MODELS:
         if language not in (None, "en"):
             raise TranscriptionError(
-                f"The model {model} only understands English. Pick a multilingual model "
-                "such as large-v3-turbo or small for other languages."
+                f"The model {model} only understands English.", kind="settings",
+                title="Model and language don't match",
+                hint="Pick a multilingual model such as large-v3-turbo for other languages.",
             )
         language = "en"
 
@@ -262,4 +269,5 @@ def transcribe(
     path = Path(source).expanduser()
     if path.is_file():
         return _transcribe_local(path, language=language, model=model, device=device)
-    raise TranscriptionError("That's not a link (http/https) or an existing file.")
+    raise TranscriptionError("That's not a web link (http/https) or an existing file.", kind="link",
+                             title="Not a link", hint="Paste the full link, starting with https://")

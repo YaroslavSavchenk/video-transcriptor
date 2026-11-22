@@ -29,11 +29,11 @@ def test_transcribe_returns_text_and_files(monkeypatch):
 
 def test_user_errors_are_shown(monkeypatch):
     def fail(url, **kwargs):
-        raise core.TranscriptionError("too long")
+        raise core.TranscriptionError("too long", kind="video", title="Video too long")
 
     monkeypatch.setattr(core, "transcribe", fail)
     res = client.post("/api/transcribe", json={"url": "https://youtube.com/x"})
-    assert res.status_code == 422 and res.json()["detail"] == "too long"
+    assert res.status_code == 422 and res.json()["detail"]["title"] == "Video too long" and res.json()["detail"]["kind"] == "video"
 
 
 def test_input_validation():

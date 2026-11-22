@@ -63,8 +63,8 @@
   .lead { color: var(--muted); margin: 0 0 22px; }
   form { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
   .row { display: flex; gap: 10px; }
-  input[type=url] { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-  input[type=url]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #url { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  #url:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .primary { font-weight: 600; border: 0; border-radius: 10px; padding: 11px 18px; background: var(--accent); color: var(--accent-text); }
   .primary:disabled { opacity: .55; cursor: progress; }
   .ghost { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font-size: .88rem; }
@@ -137,7 +137,7 @@
 
     <form id="form">
       <div class="row">
-        <input id="url" type="url" required placeholder="https://www.instagram.com/reel/…" autocomplete="off" maxlength="2048" autofocus>
+        <input id="url" type="text" inputmode="url" spellcheck="false" placeholder="https://www.instagram.com/reel/…" autocomplete="off" maxlength="2048" autofocus>
         <button class="primary" id="go" type="submit">Transcribe</button>
       </div>
       <div class="options">
@@ -190,7 +190,7 @@
     <p id="dlg-message"></p>
     <p class="hint" id="dlg-hint"></p>
     <details id="dlg-details"><summary>Technical details</summary><pre id="dlg-tech"></pre></details>
-    <div class="btns"><button class="primary" id="dlg-ok" type="button">OK</button></div>
+    <div class="btns"><button class="primary" id="dlg-ok" type="button" autofocus>OK</button></div>
   </div>
 </dialog>
 <div class="toast" id="toast"><span id="toast-text"></span><button id="toast-undo" type="button">Undo</button></div>
@@ -237,7 +237,10 @@ async function api(path, options = {}) {
 }
 
 // ---------------------------------------------------------------- dialog + toast
-const KIND_LABELS = { link: "Problem with the link", platform: "Problem on the platform's side", network: "Connection problem", video: "Problem with the video", app: "Problem in the app" };
+const KIND_LABELS = {
+  link: "Problem with the link", video: "Problem with this video", platform: "Problem on the platform's side",
+  network: "Connection problem", settings: "Problem with the settings", app: "Problem in the app",
+};
 function showError(err) {
   err = err || {};
   $("dlg-kind").textContent = KIND_LABELS[err.kind] || "Error";
@@ -379,7 +382,11 @@ async function openSaved(id, keepNotice) {
 
 async function transcribe(force) {
   const url = $("url").value.trim();
-  if (!url) return;
+  if (!url) {
+    showError({ kind: "link", title: "No link", message: "Paste a link to a video first.",
+                hint: "On the video, tap Share → Copy link, then paste it in the box." });
+    return;
+  }
   $("existing").style.display = "none";
   $("result").style.display = "none";
   $("status").style.display = "flex";
