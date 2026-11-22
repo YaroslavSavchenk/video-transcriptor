@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     serve = sub.add_parser("serve", help="start the local web page")
     serve.add_argument("--host", default="127.0.0.1", help="address to listen on (default: 127.0.0.1)")
     serve.add_argument("--port", type=int, default=8000, help="port (default: 8000)")
+    serve.add_argument("--save-dir", metavar="DIR",
+                       help="where every transcript is saved (default: Documents/Transcripts)")
     _add_cookie_args(serve)
 
     tr = sub.add_parser("transcribe", help="transcribe a link or local file on the command line")
@@ -52,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
 
         from .web import create_app
 
-        app = create_app(args.cookies_from_browser, args.cookies)
+        app = create_app(args.cookies_from_browser, args.cookies, Path(args.save_dir) if args.save_dir else None)
         print(f"\n  Open http://{args.host}:{args.port} in your browser and paste a link.\n")
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
         return 0
