@@ -13,6 +13,7 @@ Paste a link to an Instagram Reel, YouTube Short or TikTok and get the spoken te
 - Output as `.txt`, `.srt`, `.vtt` or `.json` with timestamps
 - Uses existing platform captions when available (nothing gets fetched), otherwise local speech-to-text
 - Temporary audio is deleted automatically; only the transcript is kept
+- Simple local web page: paste a link, copy the transcript
 - Works on CPU, uses a GPU when available
 
 ## How it works
@@ -24,6 +25,16 @@ Paste a link to an Instagram Reel, YouTube Short or TikTok and get the spoken te
 5. Delete the temporary audio and write the transcript in the format you asked for.
 
 ## Planned usage
+
+### Web page (main way)
+
+```bash
+video-transcriptor serve
+```
+
+Open <http://localhost:8000>, paste a link, and copy or download the transcript.
+
+### Command line
 
 ```bash
 # Transcribe a YouTube Short to plain text

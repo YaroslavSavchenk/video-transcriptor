@@ -20,7 +20,8 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
   5. Delete all temporary media automatically. Only the transcript remains.
 - **Language**: automatic language detection, with an option to force a language (e.g. `--lang nl`).
 - **Output formats**: plain text (`.txt`), subtitles (`.srt`, `.vtt`), and `.json` with timestamped segments.
-- **Interface**: a command-line tool, e.g. `transcribe <url-or-file> [--format srt] [--lang nl] [--model small]`.
+- **Interface**: a **local web page** as the main interface. Run one command, open `http://localhost:8000`, paste a link, and the transcript appears on the page with *Copy* and *Download (.txt / .srt)* buttons and a language/model option. Runs entirely on your own machine.
+- **CLI** as a secondary interface for power users, e.g. `transcribe <url> [--format srt] [--lang nl] [--model small]`. Both share the same core.
 - **Runs locally and for free**: no paid API or account needed; works on CPU, uses a GPU if one is available.
 - **Cleanup**: temporary audio is always deleted, also when something fails. A `--keep-media` debug flag is the only exception.
 - **Instagram login**: Reels often require a logged-in session. Support an optional `--cookies-from-browser <browser>` passthrough to yt-dlp.
@@ -37,7 +38,8 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
 
 ## Possible later additions
 
-- Simple local web UI (drag & drop a file or paste a URL).
+- Drag & drop local files in the web UI.
+- Telegram bot or phone-friendly access over the local network.
 - Speaker diarisation.
 - Translation of the transcript to another language.
 - Batch mode for a list of URLs.
@@ -51,6 +53,7 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
 | Download | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Audio processing | [ffmpeg](https://ffmpeg.org/) |
 | Speech-to-text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (Whisper models, CPU/GPU) |
+| Web UI | [FastAPI](https://fastapi.tiangolo.com/) + a single plain HTML page |
 | CLI | `argparse` or `typer` |
 
 The stack can still change based on research into existing tools.
