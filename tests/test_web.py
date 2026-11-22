@@ -1,9 +1,12 @@
+import tempfile
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from video_transcriptor import core, web
 from video_transcriptor.models import Segment, Transcript
 
-client = TestClient(web.create_app())
+client = TestClient(web.create_app(save_dir=Path(tempfile.mkdtemp())))
 
 
 def test_index_and_options():
@@ -37,3 +40,19 @@ def test_input_validation():
     assert client.post("/api/transcribe", json={"url": "file:///etc/passwd"}).status_code == 400
     assert client.post("/api/transcribe", json={"url": "https://x.com", "language": "<script>"}).status_code in (400, 422)
     assert client.post("/api/transcribe", json={"url": "https://x.com", "model": "evil/repo"}).status_code == 400
+
+
+def test_transcripts_are_saved_and_listed(monkeypatch, tmp_path):
+    app_client = TestClient(web.create_app(save_dir=tmp_path))
+
+    def fake(url, **kwargs):
+        return Transcript([Segment(0, 1, "Saved text.")], "en", "captions", "My Video", url, 5)
+
+    monkeypatch.setattr(core, "transcribe", fake)
+    data = app_client.post("/api/transcribe", json={"url": "https://youtube.com/x"}).json()
+    assert data["saved_file"].endswith(" - My Video.txt")
+    items = app_client.get("/api/history").json()
+    assert [i["file"] for i in items] == [data["saved_file"]]
+    item = app_client.get(f"/api/history/{data['saved_file']}").json()
+    assert item["text"] == "Saved text." and item["meta"]["link"] == "https://youtube.com/x"
+    assert app_client.get("/api/history/..%2F..%2Fetc%2Fpasswd").status_code == 404

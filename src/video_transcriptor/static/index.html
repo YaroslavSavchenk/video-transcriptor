@@ -6,103 +6,140 @@
 <title>Video Transcriptor</title>
 <style>
   :root {
-    --bg: #f6f5f2; --panel: #ffffff; --text: #1c1b19; --muted: #6b6860; --border: #e3e0d8;
+    --bg: #f6f5f2; --panel: #ffffff; --side: #efede8; --text: #1c1b19; --muted: #6b6860; --border: #e3e0d8;
     --accent: #2f5bd3; --accent-text: #ffffff; --error-bg: #fdecea; --error: #a3261b;
-    --chip: #eef1fb;
+    --chip: #eef1fb; --hover: #e6e3dc; --active: #dfe6fb; --ok: #1f7a4d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #151514; --panel: #1f1e1c; --text: #ecebe7; --muted: #9c998f; --border: #34322e;
+      --bg: #151514; --panel: #1f1e1c; --side: #1a1918; --text: #ecebe7; --muted: #9c998f; --border: #34322e;
       --accent: #7c9cff; --accent-text: #0d1020; --error-bg: #3a1d1a; --error: #ffb4a9;
-      --chip: #262b3b;
+      --chip: #262b3b; --hover: #262522; --active: #262f4d; --ok: #6fd3a0;
     }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    display: grid; grid-template-columns: 280px 1fr;
   }
-  main { max-width: 760px; margin: 0 auto; padding: 48px 16px 64px; }
-  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .lead { color: var(--muted); margin: 0 0 28px; }
-  form { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  aside {
+    background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    min-height: 0; height: 100vh;
+  }
+  .side-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 10px; }
+  .side-head h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0; }
+  #history { list-style: none; margin: 0; padding: 0 8px 16px; overflow-y: auto; flex: 1; }
+  #history li button {
+    width: 100%; text-align: left; background: transparent; color: var(--text); border: 0; border-radius: 8px;
+    padding: 8px 10px; font: inherit; font-size: .88rem; cursor: pointer; display: block;
+  }
+  #history li button:hover { background: var(--hover); }
+  #history li button.active { background: var(--active); }
+  #history .date { display: block; color: var(--muted); font-size: .75rem; }
+  #history .name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .empty { color: var(--muted); font-size: .85rem; padding: 4px 18px; }
+  main { overflow-y: auto; height: 100vh; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 28px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); margin: 0 0 22px; }
+  form { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
   .row { display: flex; gap: 10px; }
   input[type=url] {
-    flex: 1; min-width: 0; font: inherit; padding: 12px 14px; border-radius: 10px;
+    flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 10px;
     border: 1px solid var(--border); background: var(--bg); color: var(--text);
   }
   input[type=url]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  button {
-    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer;
-    background: var(--accent); color: var(--accent-text);
-  }
-  button:disabled { opacity: .55; cursor: progress; }
-  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); font-weight: 500; padding: 8px 12px; }
-  .options { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; color: var(--muted); font-size: .9rem; align-items: center; }
+  button { font: inherit; cursor: pointer; }
+  .primary { font-weight: 600; border: 0; border-radius: 10px; padding: 11px 18px; background: var(--accent); color: var(--accent-text); }
+  .primary:disabled { opacity: .55; cursor: progress; }
+  .ghost { background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font-size: .88rem; }
+  .ghost:hover { background: var(--hover); }
+  .small { padding: 4px 10px; font-size: .8rem; }
+  .options { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; color: var(--muted); font-size: .88rem; align-items: center; }
   .options label { display: flex; gap: 6px; align-items: center; }
   select { font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-  .status { margin-top: 20px; color: var(--muted); display: none; align-items: center; gap: 10px; }
+  .status { margin-top: 18px; color: var(--muted); display: none; align-items: center; gap: 10px; }
   .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .error { margin-top: 20px; padding: 14px 16px; border-radius: 10px; background: var(--error-bg); color: var(--error); white-space: pre-wrap; display: none; }
-  .result { margin-top: 24px; display: none; }
+  .error { margin-top: 18px; padding: 14px 16px; border-radius: 10px; background: var(--error-bg); color: var(--error); white-space: pre-wrap; display: none; }
+  .result { margin-top: 22px; display: none; }
   .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
-  .meta h2 { font-size: 1.05rem; margin: 0 8px 0 0; flex-basis: 100%; }
-  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+  .meta h2 { font-size: 1.05rem; margin: 0; flex-basis: 100%; }
+  .meta a { color: var(--accent); font-size: .85rem; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: .78rem; }
+  .saved { color: var(--ok); font-size: .85rem; margin: 0 0 10px; }
   textarea {
-    width: 100%; min-height: 280px; resize: vertical; font: inherit; line-height: 1.6; padding: 14px;
+    width: 100%; min-height: 300px; resize: vertical; font: inherit; line-height: 1.65; padding: 14px;
     border-radius: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text);
   }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  footer { margin-top: 40px; color: var(--muted); font-size: .8rem; }
-  @media (max-width: 520px) { .row { flex-direction: column; } main { padding-top: 28px; } }
+  footer { margin-top: 36px; color: var(--muted); font-size: .78rem; }
+  @media (max-width: 760px) {
+    body { display: block; }
+    aside { height: auto; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    main { height: auto; }
+    .wrap { padding: 20px 16px 40px; }
+    .row { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
+<aside>
+  <div class="side-head">
+    <h2>Saved transcripts</h2>
+    <button class="ghost small" id="open-folder" type="button" title="Open the folder with all transcripts">Open folder</button>
+  </div>
+  <ul id="history"></ul>
+</aside>
+
 <main>
-  <h1>Video Transcriptor</h1>
-  <p class="lead">Paste a link to an Instagram Reel, YouTube Short or TikTok. Up to <span id="max">10</span> minutes.</p>
+  <div class="wrap">
+    <h1>Video Transcriptor</h1>
+    <p class="lead">Paste a link to an Instagram Reel, YouTube Short or TikTok (up to <span id="max">10</span> minutes).</p>
 
-  <form id="form">
-    <div class="row">
-      <input id="url" type="url" required placeholder="https://www.instagram.com/reel/…" autocomplete="off" autofocus>
-      <button id="go" type="submit">Transcribe</button>
-    </div>
-    <div class="options">
-      <label>Language
-        <select id="language">
-          <option value="en" selected>English</option>
-          <option value="">Auto-detect</option>
-          <option value="nl">Dutch</option>
-          <option value="de">German</option>
-          <option value="fr">French</option>
-          <option value="es">Spanish</option>
-          <option value="uk">Ukrainian</option>
-          <option value="ru">Russian</option>
-        </select>
-      </label>
-      <label>Model
-        <select id="model"></select>
-      </label>
-      <label><input id="captions" type="checkbox" checked> Use platform captions when available</label>
-    </div>
-  </form>
+    <form id="form">
+      <div class="row">
+        <input id="url" type="url" required placeholder="https://www.instagram.com/reel/…" autocomplete="off" autofocus>
+        <button class="primary" id="go" type="submit">Transcribe</button>
+      </div>
+      <div class="options">
+        <label>Language
+          <select id="language">
+            <option value="en" selected>English</option>
+            <option value="">Auto-detect</option>
+            <option value="nl">Dutch</option>
+            <option value="de">German</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="uk">Ukrainian</option>
+            <option value="ru">Russian</option>
+          </select>
+        </label>
+        <label>Model <select id="model"></select></label>
+        <label><input id="captions" type="checkbox" checked> Use platform captions when available</label>
+      </div>
+    </form>
 
-  <div class="status" id="status"><div class="spinner"></div><span id="status-text">Working…</span></div>
-  <div class="error" id="error" role="alert"></div>
+    <div class="status" id="status"><div class="spinner"></div><span id="status-text">Working…</span></div>
+    <div class="error" id="error" role="alert"></div>
 
-  <section class="result" id="result">
-    <div class="meta" id="meta"></div>
-    <textarea id="text" readonly></textarea>
-    <div class="actions">
-      <button class="ghost" id="copy" type="button">Copy</button>
-      <button class="ghost" data-fmt="txt" type="button">Download .txt</button>
-      <button class="ghost" data-fmt="srt" type="button">Download .srt</button>
-      <button class="ghost" data-fmt="vtt" type="button">Download .vtt</button>
-    </div>
-  </section>
+    <section class="result" id="result">
+      <div class="meta" id="meta"></div>
+      <p class="saved" id="saved"></p>
+      <textarea id="text" readonly></textarea>
+      <div class="actions">
+        <button class="ghost" id="copy" type="button">Copy</button>
+        <button class="ghost" id="show-file" type="button">Show in folder</button>
+        <button class="ghost" data-fmt="srt" type="button">Export .srt</button>
+        <button class="ghost" data-fmt="vtt" type="button">Export .vtt</button>
+      </div>
+    </section>
 
-  <footer>Runs on your own computer. Audio is fetched temporarily and deleted right after transcribing.</footer>
+    <footer>Runs on your own computer. Audio is fetched temporarily and deleted right after transcribing.
+      Every transcript is saved in <span id="save-dir">your Transcripts folder</span>.</footer>
+  </div>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -117,17 +154,17 @@ const MODEL_LABELS = {
   "large-v3": "large-v3 · any language, slow",
 };
 let englishOnly = [];
+let current = null; // { file, title, files? }
+
 // English-only models can't do other languages: switch to a multilingual model when needed.
-function syncModel() {
-  const lang = $("language").value;
-  if (lang !== "en" && englishOnly.includes($("model").value)) $("model").value = "large-v3-turbo";
-}
-$("language").addEventListener("change", syncModel);
+$("language").addEventListener("change", () => {
+  if ($("language").value !== "en" && englishOnly.includes($("model").value)) $("model").value = "large-v3-turbo";
+});
 $("model").addEventListener("change", () => { if (englishOnly.includes($("model").value)) $("language").value = "en"; });
-let last = null;
 
 fetch("/api/options").then(r => r.json()).then(o => {
   $("max").textContent = o.max_minutes;
+  $("save-dir").textContent = o.save_dir;
   englishOnly = o.english_only_models;
   for (const m of o.models) {
     const opt = new Option(MODEL_LABELS[m] || m, m);
@@ -136,8 +173,55 @@ fetch("/api/options").then(r => r.json()).then(o => {
   }
 });
 
-function chip(text) { const s = document.createElement("span"); s.className = "chip"; s.textContent = text; return s; }
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function fmtDuration(s) { if (!s) return null; s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+
+async function loadHistory() {
+  const items = await fetch("/api/history").then(r => r.json()).catch(() => []);
+  const list = $("history");
+  list.replaceChildren();
+  if (!items.length) { list.append(el("li", "empty", "Nothing yet. Your transcripts will show up here.")); return; }
+  for (const item of items) {
+    const m = item.name.match(/^(\d{4}-\d{2}-\d{2}) - (.*)$/);
+    const btn = el("button");
+    btn.type = "button";
+    btn.dataset.file = item.file;
+    btn.append(el("span", "date", m ? m[1] : ""), el("span", "name", m ? m[2] : item.name));
+    btn.addEventListener("click", () => openSaved(item.file));
+    const li = el("li"); li.append(btn); list.append(li);
+  }
+  markActive();
+}
+
+function markActive() {
+  document.querySelectorAll("#history button").forEach(b => b.classList.toggle("active", !!current && b.dataset.file === current.file));
+}
+
+function show({ title, link, chips, text, saved, file, files }) {
+  current = { file, title, files };
+  const meta = $("meta");
+  meta.replaceChildren(el("h2", null, title || "Transcript"));
+  if (link) { const a = el("a", null, link); a.href = link; a.target = "_blank"; a.rel = "noopener"; meta.append(a); }
+  for (const c of chips) if (c) meta.append(el("span", "chip", c));
+  $("saved").textContent = saved || "";
+  $("saved").style.display = saved ? "block" : "none";
+  $("text").value = text || "(No speech found.)";
+  $("show-file").style.display = file ? "" : "none";
+  document.querySelectorAll("[data-fmt]").forEach(b => (b.style.display = files ? "" : "none"));
+  $("error").style.display = "none";
+  $("result").style.display = "block";
+  markActive();
+}
+
+async function openSaved(file) {
+  const res = await fetch(`/api/history/${encodeURIComponent(file)}`);
+  if (!res.ok) return;
+  const d = await res.json();
+  show({
+    title: d.meta.title || file, link: d.meta.link, text: d.text, file,
+    chips: [d.meta.transcribed && `Transcribed ${d.meta.transcribed}`, d.meta.language && `Language: ${d.meta.language}`, d.meta.source],
+  });
+}
 
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -160,16 +244,19 @@ $("form").addEventListener("submit", async (e) => {
     });
     const data = await res.json().catch(() => ({ detail: `Server error (${res.status})` }));
     if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Invalid request.");
-    last = data;
-    const meta = $("meta");
-    meta.replaceChildren();
-    const h = document.createElement("h2"); h.textContent = data.title || "Transcript"; meta.append(h);
-    meta.append(chip(data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`));
-    if (data.language) meta.append(chip(`Language: ${data.language}`));
-    const d = fmtDuration(data.duration); if (d) meta.append(chip(`Length ${d}`));
-    meta.append(chip(`Took ${data.elapsed_seconds}s`));
-    $("text").value = data.text || "(No speech found.)";
-    $("result").style.display = "block";
+    const name = data.saved_file ? data.saved_file.replace(/^\d{4}-\d{2}-\d{2} - /, "").replace(/\.txt$/, "") : data.title;
+    show({
+      title: name, link: data.url, text: data.text, file: data.saved_file, files: data.files,
+      saved: data.saved_file ? `✓ Saved as “${data.saved_file}”` : (data.save_error ? `Not saved: ${data.save_error}` : ""),
+      chips: [
+        data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`,
+        data.language && `Language: ${data.language}`,
+        fmtDuration(data.duration) && `Length ${fmtDuration(data.duration)}`,
+        `Took ${data.elapsed_seconds}s`,
+      ],
+    });
+    $("url").value = "";
+    loadHistory();
   } catch (err) {
     $("error").textContent = err.message;
     $("error").style.display = "block";
@@ -187,15 +274,23 @@ $("copy").addEventListener("click", async () => {
   setTimeout(() => ($("copy").textContent = "Copy"), 1500);
 });
 
+const openFolder = (file) => fetch("/api/open-folder", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: file || null }),
+});
+$("open-folder").addEventListener("click", () => openFolder());
+$("show-file").addEventListener("click", () => current && openFolder(current.file));
+
 document.querySelectorAll("[data-fmt]").forEach(btn => btn.addEventListener("click", () => {
-  if (!last) return;
+  if (!current || !current.files) return;
   const fmt = btn.dataset.fmt;
-  const name = (last.title || "transcript").replace(/[^\w\- ]+/g, "").trim().slice(0, 60) || "transcript";
-  const blob = new Blob([last.files[fmt]], { type: "text/plain;charset=utf-8" });
+  const name = (current.title || "transcript").replace(/[<>:"/\\|?*]+/g, "").trim().slice(0, 80) || "transcript";
+  const blob = new Blob([current.files[fmt]], { type: "text/plain;charset=utf-8" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = `${name}.${fmt}`; a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }));
+
+loadHistory();
 </script>
 </body>
 </html>

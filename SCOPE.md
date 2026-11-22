@@ -21,6 +21,8 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
 - **Language**: **English is the primary target** (English-only models `small.en` / `distil-large-v3` by default). Other languages are supported via multilingual models (`large-v3-turbo`), chosen automatically when another language is selected.
 - **Output formats**: plain text (`.txt`), subtitles (`.srt`, `.vtt`), and `.json` with timestamped segments.
 - **Interface**: a **local web page** as the main interface. Run one command, open `http://localhost:8000`, paste a link, and the transcript appears on the page with *Copy* and *Download (.txt / .srt)* buttons and a language/model option. Runs entirely on your own machine.
+- **Windows desktop app**: a native window (pywebview + Edge WebView2) with a Desktop/Start menu shortcut that starts and stops the server in WSL.
+- **Saved transcripts**: every transcript is saved as `YYYY-MM-DD - <video name>.txt` (with title, link, date, language and source in a header) and listed in the app.
 - **CLI** as a secondary interface for power users, e.g. `transcribe <url> [--format srt] [--lang nl] [--model small]`. Both share the same core.
 - **Runs locally and for free**: no paid API or account needed; works on CPU, uses a GPU if one is available.
 - **Cleanup**: temporary audio is always deleted, also when something fails. A `--keep-media` debug flag is the only exception.

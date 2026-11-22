@@ -140,6 +140,7 @@ def _transcribe_url(
                 transcript = _try_captions(ydl, info, language)
                 if transcript:
                     transcript.title, transcript.url, transcript.duration = title, url, duration
+                    transcript.extra.update(_video_meta(info))
                     return transcript
 
             try:
@@ -163,10 +164,20 @@ def _transcribe_url(
             shutil.copy2(files[0], keep_media_dir)
         return Transcript(
             segments, detected, "speech-recognition", title, url, duration or audio_duration,
-            extra={"model": model},
+            extra={"model": model, **_video_meta(info)},
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _video_meta(info: dict) -> dict:
+    """Details used to give saved transcripts a recognisable name."""
+    return {
+        "channel": info.get("channel") or info.get("uploader_id") or info.get("uploader"),
+        "uploader": info.get("uploader"),
+        "description": (info.get("description") or "")[:300],
+        "platform": info.get("extractor_key"),
+    }
 
 
 def _has_audio(path: Path) -> bool:

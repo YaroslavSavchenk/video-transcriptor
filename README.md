@@ -6,7 +6,8 @@ Built mainly for **English** videos. Other languages (Dutch, German, …) work t
 
 ## Features
 
-- Local web page: paste a link, then copy or download the transcript
+- Windows desktop app (with the tool running in WSL), or a local web page: paste a link, copy the transcript
+- Every transcript is saved automatically as `YYYY-MM-DD - <video name>.txt` in `Documents/Transcripts`, and listed in the app
 - Instagram Reels, YouTube videos and Shorts, TikTok, and other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports
 - Videos up to 10 minutes
 - Runs on your own computer and is free: no account or API key needed
@@ -31,13 +32,23 @@ ffmpeg isn't required. Audio is decoded through PyAV, which ships with its own f
 
 ## Use it
 
+### Windows desktop app (WSL)
+
+If you run the tool inside WSL, install a real desktop app with a shortcut on your Desktop and in the Start menu:
+
+```bash
+scripts/install-windows-app.sh
+```
+
+It needs [uv for Windows](https://docs.astral.sh/uv/) (`winget install astral-sh.uv`) and the Edge WebView2 runtime, which comes with Windows 10 and 11. The app starts the transcription server in WSL when you open it and stops it again when you close the window. By default it uses your Windows Firefox cookies for Instagram. Pass other `serve` options to the script to change that.
+
 ### Web page
 
 ```bash
 .venv/bin/video-transcriptor serve
 ```
 
-Open <http://127.0.0.1:8000>, paste a link and press **Transcribe**. The first time you use a model it downloads once (from about 250 MB up to 1.6 GB).
+Open <http://127.0.0.1:8000>, paste a link and press **Transcribe**. Each transcript is saved to `Documents/Transcripts` (your Windows Documents folder under WSL). Use `--save-dir` to choose another folder. The first time you use a model it downloads once (from about 250 MB up to 1.6 GB).
 
 ### Command line
 
