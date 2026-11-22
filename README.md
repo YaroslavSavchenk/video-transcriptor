@@ -1,6 +1,6 @@
 # video-transcriptor
 
-A simple command-line tool that turns short videos into text transcripts. Paste a link to an Instagram Reel, YouTube Short or TikTok (or point it at a local file) and get the spoken text back as plain text or subtitles.
+Paste a link to an Instagram Reel, YouTube Short or TikTok and get the spoken text back. No need to download anything yourself: the tool fetches only the audio behind the scenes and deletes it right after transcribing.
 
 > **Status:** early development. Nothing is installable yet. See [SCOPE.md](SCOPE.md) for what's planned.
 
@@ -11,16 +11,17 @@ A simple command-line tool that turns short videos into text transcripts. Paste 
 - Runs locally and for free: no account or API key needed
 - Automatic language detection, or force one with `--lang` (e.g. Dutch, English)
 - Output as `.txt`, `.srt`, `.vtt` or `.json` with timestamps
-- Uses existing platform captions when available, otherwise local speech-to-text
+- Uses existing platform captions when available (nothing gets fetched), otherwise local speech-to-text
+- Temporary audio is deleted automatically; only the transcript is kept
 - Works on CPU, uses a GPU when available
 
 ## How it works
 
 1. Check the video's metadata and reject anything over 10 minutes.
-2. Download the audio track with [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-3. Convert it to 16 kHz mono with [ffmpeg](https://ffmpeg.org/).
+2. If the platform has captions (e.g. YouTube), use them directly.
+3. Otherwise fetch only the audio stream with [yt-dlp](https://github.com/yt-dlp/yt-dlp) into a temporary folder and convert it to 16 kHz mono with [ffmpeg](https://ffmpeg.org/).
 4. Transcribe it with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), an efficient implementation of OpenAI's Whisper models.
-5. Write the transcript in the format you asked for.
+5. Delete the temporary audio and write the transcript in the format you asked for.
 
 ## Planned usage
 

@@ -2,24 +2,28 @@
 
 ## Goal
 
-A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok, or a local file) into a text transcript. Videos are capped at **10 minutes**.
+A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) into a text transcript. Videos are capped at **10 minutes**.
+
+**Core principle: paste a link, get a transcript.** The user never downloads, saves or manages video files. The tool fetches only the audio stream behind the scenes, keeps it in a temporary location, and deletes it as soon as the transcript is done.
 
 ## In scope (v1)
 
 - **Input**
   - A public video URL (Instagram Reels, YouTube / YouTube Shorts, TikTok; anything else yt-dlp supports is a bonus, not a promise).
-  - A local video or audio file.
+  - A local video or audio file (secondary; the link is the main flow).
 - **Duration limit**: reject videos longer than 10 minutes before downloading the full file (check metadata first).
 - **Pipeline**
   1. Fetch metadata and check duration.
-  2. If the platform already offers captions, optionally use those (fast, no compute).
-  3. Otherwise download audio only and normalise it with ffmpeg (16 kHz mono).
-  4. Transcribe locally with an open-source speech-to-text model (Whisper family).
+  2. **Captions first**: if the platform already has captions (YouTube, possibly TikTok), use those. No media is fetched at all.
+  3. Otherwise fetch the **audio stream only** (no video) into a temporary directory and normalise it with ffmpeg (16 kHz mono).
+  4. Transcribe locally with an open-source speech-to-text model (faster-whisper).
+  5. Delete all temporary media automatically. Only the transcript remains.
 - **Language**: automatic language detection, with an option to force a language (e.g. `--lang nl`).
 - **Output formats**: plain text (`.txt`), subtitles (`.srt`, `.vtt`), and `.json` with timestamped segments.
 - **Interface**: a command-line tool, e.g. `transcribe <url-or-file> [--format srt] [--lang nl] [--model small]`.
 - **Runs locally and for free**: no paid API or account needed; works on CPU, uses a GPU if one is available.
-- **Cleanup**: temporary media files are deleted after transcription unless `--keep-media` is passed.
+- **Cleanup**: temporary audio is always deleted, also when something fails. A `--keep-media` debug flag is the only exception.
+- **Instagram login**: Reels often require a logged-in session. Support an optional `--cookies-from-browser <browser>` passthrough to yt-dlp.
 
 ## Out of scope (v1)
 
