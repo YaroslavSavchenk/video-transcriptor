@@ -160,7 +160,7 @@
           </select>
         </label>
         <label>Model <select id="model"></select></label>
-        <label><input id="captions" type="checkbox" checked> Use platform captions when available</label>
+        <label title="Captions written by the uploader are used as-is (instant). Automatic platform captions are skipped: speech recognition gives better text."><input id="captions" type="checkbox" checked> Use the uploader's own captions when available</label>
       </div>
     </form>
 
@@ -414,8 +414,9 @@ function showResult(data) {
     title: data.saved_id ? data.saved_id.replace(/^\d{4}-\d{2}\/\d{4}-\d{2}-\d{2} - /, "").replace(/\.txt$/, "") : data.title,
     saved: data.saved_id ? "✓ Saved to your transcripts" : (data.save_error ? `Not saved: ${data.save_error}` : ""),
     chips: [
-      data.source === "captions" ? "From platform captions" : `Speech recognition · ${data.extra.model}`,
+      data.source === "captions" ? "From the uploader's captions" : `Speech recognition · ${data.extra.model}`,
       data.language && `Language: ${data.language}`,
+      data.extra.switched_from_model && "Switched to the multilingual model (video isn't in English)",
       fmtDuration(data.duration) && `Length ${fmtDuration(data.duration)}`,
       `Took ${data.elapsed_seconds}s`,
     ],

@@ -118,3 +118,10 @@ def test_windows_firefox_profile_is_found_under_wsl(tmp_path, monkeypatch):
 def test_cookie_options():
     opts = core._ydl_options("chrome:Profile 1", None)
     assert opts["cookiesfrombrowser"] == ("chrome", "Profile 1")
+
+
+def test_switches_to_multilingual_model_when_youtube_says_the_video_is_not_english(fake_ytdlp):
+    FakeYDL.info = {"title": "nl video", "duration": 30, "language": "nl"}
+    t = core.transcribe("https://www.youtube.com/watch?v=abcdefghijk", use_captions=False)
+    assert fake_ytdlp == [("large-v3-turbo", "nl")]
+    assert t.extra["switched_from_model"] == "small.en"
