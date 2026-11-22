@@ -19,7 +19,7 @@ Built mainly for **English** videos. Other languages (Dutch, German, …) work t
 
 ## Install
 
-Requires Python 3.10+. Using [uv](https://docs.astral.sh/uv/) (or plain `pip`):
+Requires Python 3.11+. Using [uv](https://docs.astral.sh/uv/) (or plain `pip`):
 
 ```bash
 git clone https://github.com/YaroslavSavchenk/video-transcriptor.git

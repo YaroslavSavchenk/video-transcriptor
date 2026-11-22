@@ -51,7 +51,7 @@ A simple tool that turns a short video (Instagram Reel, YouTube Short, TikTok) i
 
 | Part | Choice |
 | --- | --- |
-| Language | Python 3.10+ |
+| Language | Python 3.11+ |
 | Download | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Audio decoding | PyAV (bundled ffmpeg libraries; no system ffmpeg needed) |
 | Speech-to-text | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (Whisper models, CPU/GPU) |
